@@ -1,0 +1,328 @@
+import { useEffect, useState, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
+import { formatDate } from "@/lib/date";
+import type { Order, Supplier } from "@/types";
+
+interface PurchaseRecord {
+  id: string;
+  created_at: string;
+  order_number: string;
+  supplier_name: string;
+  supplier_id: string | null;
+  replacement_cost: number;
+  device: string;
+  service_description: string;
+}
+
+export default function SupplierPurchases() {
+  // Inicializar fechas por defecto (último mes) desde el inicio
+  const getDefaultDates = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 1);
+    return {
+      start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
+    };
+  };
+
+  const defaultDates = getDefaultDates();
+
+  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Filtros
+  const [selectedSupplier, setSelectedSupplier] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<"custom" | "2days" | "week" | "15days" | "month">("month");
+  const [startDate, setStartDate] = useState<string>(defaultDates.start);
+  const [endDate, setEndDate] = useState<string>(defaultDates.end);
+
+  useEffect(() => {
+    async function loadSuppliers() {
+      const { data } = await supabase
+        .from("suppliers")
+        .select("*")
+        .order("name");
+      if (data) setSuppliers(data);
+    }
+    loadSuppliers();
+  }, []);
+
+  useEffect(() => {
+    async function loadPurchases() {
+      setLoading(true);
+      
+      // Calcular rango de fechas según el filtro seleccionado
+      let dateStart: Date;
+      let dateEnd: Date = new Date();
+      dateEnd.setHours(23, 59, 59, 999);
+
+      if (dateRange === "custom") {
+        if (!startDate || !endDate) {
+          setLoading(false);
+          return;
+        }
+        dateStart = new Date(startDate);
+        dateStart.setHours(0, 0, 0, 0);
+        dateEnd = new Date(endDate);
+        dateEnd.setHours(23, 59, 59, 999);
+      } else if (dateRange === "2days") {
+        dateStart = new Date();
+        dateStart.setDate(dateStart.getDate() - 2);
+        dateStart.setHours(0, 0, 0, 0);
+      } else if (dateRange === "week") {
+        dateStart = new Date();
+        dateStart.setDate(dateStart.getDate() - 7);
+        dateStart.setHours(0, 0, 0, 0);
+      } else if (dateRange === "15days") {
+        dateStart = new Date();
+        dateStart.setDate(dateStart.getDate() - 15);
+        dateStart.setHours(0, 0, 0, 0);
+      } else {
+        // month
+        dateStart = new Date();
+        dateStart.setMonth(dateStart.getMonth() - 1);
+        dateStart.setHours(0, 0, 0, 0);
+      }
+
+      // Construir query
+      let query = supabase
+        .from("orders")
+        .select(`
+          id,
+          created_at,
+          order_number,
+          replacement_cost,
+          device,
+          service_description,
+          supplier_id,
+          suppliers (
+            id,
+            name
+          )
+        `)
+        .gte("created_at", dateStart.toISOString())
+        .lte("created_at", dateEnd.toISOString())
+        .gt("replacement_cost", 0) // Solo órdenes con compras a proveedores
+        .not("supplier_id", "is", null) // Solo órdenes con proveedor asignado
+        .order("created_at", { ascending: false });
+
+      // Aplicar filtro de proveedor
+      if (selectedSupplier !== "all") {
+        query = query.eq("supplier_id", selectedSupplier);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error loading purchases:", error);
+        setPurchases([]);
+      } else {
+        const purchasesData: PurchaseRecord[] = (data || []).map((order: any) => ({
+          id: order.id,
+          created_at: order.created_at,
+          order_number: order.order_number,
+          supplier_name: order.suppliers?.name || "Sin proveedor",
+          supplier_id: order.supplier_id,
+          replacement_cost: order.replacement_cost || 0,
+          device: order.device,
+          service_description: order.service_description,
+        }));
+        setPurchases(purchasesData);
+      }
+      setLoading(false);
+    }
+
+    loadPurchases();
+  }, [selectedSupplier, dateRange, startDate, endDate]);
+
+  const filteredPurchases = useMemo(() => {
+    return purchases;
+  }, [purchases]);
+
+  const totalSpent = useMemo(() => {
+    return filteredPurchases.reduce((sum, p) => sum + (p.replacement_cost || 0), 0);
+  }, [filteredPurchases]);
+
+  const handleDateRangeChange = (range: "custom" | "2days" | "week" | "15days" | "month") => {
+    setDateRange(range);
+    
+    if (range !== "custom") {
+      const end = new Date();
+      const start = new Date();
+      
+      if (range === "2days") {
+        start.setDate(start.getDate() - 2);
+      } else if (range === "week") {
+        start.setDate(start.getDate() - 7);
+      } else if (range === "15days") {
+        start.setDate(start.getDate() - 15);
+      } else if (range === "month") {
+        start.setMonth(start.getMonth() - 1);
+      }
+      
+      setStartDate(start.toISOString().slice(0, 10));
+      setEndDate(end.toISOString().slice(0, 10));
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Compras a Proveedores</h3>
+            <p className="text-sm text-slate-600">
+              Reporte detallado de repuestos comprados y gastos por proveedor
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-slate-600">Total gastado en el período:</div>
+            <div className="text-2xl font-bold text-brand">
+              ${totalSpent.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Filtro de Proveedor */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Proveedor
+            </label>
+            <select
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              value={selectedSupplier}
+              onChange={(e) => setSelectedSupplier(e.target.value)}
+            >
+              <option value="all">Todos los proveedores</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro de Rango de Fechas */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Período
+            </label>
+            <select
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              value={dateRange}
+              onChange={(e) => handleDateRangeChange(e.target.value as any)}
+            >
+              <option value="2days">Últimos 2 días</option>
+              <option value="week">Última semana</option>
+              <option value="15days">Últimos 15 días</option>
+              <option value="month">Último mes</option>
+              <option value="custom">Rango personalizado</option>
+            </select>
+          </div>
+
+          {/* Fecha Inicio */}
+          {dateRange === "custom" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Fecha Inicio
+              </label>
+              <input
+                type="date"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Fecha Fin */}
+          {dateRange === "custom" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Fecha Fin
+              </label>
+              <input
+                type="date"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Mostrar rango de fechas actual */}
+        {startDate && endDate && (
+          <div className="text-xs text-slate-500">
+            Mostrando compras desde {formatDate(startDate)} hasta {formatDate(endDate)}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="text-center text-slate-500 py-8">Cargando compras...</div>
+      ) : filteredPurchases.length === 0 ? (
+        <div className="text-center text-slate-500 py-8">
+          No se encontraron compras en el período seleccionado
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-slate-200">
+                <th className="py-3 px-2 font-semibold text-slate-700">Fecha</th>
+                <th className="py-3 px-2 font-semibold text-slate-700">N° Orden</th>
+                <th className="py-3 px-2 font-semibold text-slate-700">Proveedor</th>
+                <th className="py-3 px-2 font-semibold text-slate-700">Equipo</th>
+                <th className="py-3 px-2 font-semibold text-slate-700">Servicio</th>
+                <th className="py-3 px-2 font-semibold text-slate-700 text-right">Costo Repuesto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPurchases.map((purchase) => (
+                <tr
+                  key={purchase.id}
+                  className="border-b border-slate-100 hover:bg-slate-50"
+                >
+                  <td className="py-3 px-2">{formatDate(purchase.created_at)}</td>
+                  <td className="py-3 px-2 font-medium text-slate-900">
+                    {purchase.order_number}
+                  </td>
+                  <td className="py-3 px-2">{purchase.supplier_name}</td>
+                  <td className="py-3 px-2 text-slate-600">{purchase.device}</td>
+                  <td className="py-3 px-2 text-slate-600">
+                    {purchase.service_description}
+                  </td>
+                  <td className="py-3 px-2 text-right font-semibold text-slate-900">
+                    ${purchase.replacement_cost.toLocaleString('es-CL', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-300 bg-slate-50">
+                <td colSpan={5} className="py-3 px-2 font-semibold text-slate-900 text-right">
+                  Total:
+                </td>
+                <td className="py-3 px-2 text-right font-bold text-brand text-lg">
+                  ${totalSpent.toLocaleString('es-CL', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  })}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
