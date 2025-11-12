@@ -15,8 +15,8 @@ import { createClient } from "@supabase/supabase-js";
 const url = import.meta.env.PUBLIC_SUPABASE_URL as string;
 const serviceRoleKey = import.meta.env.PUBLIC_SUPABASE_SERVICE_ROLE_KEY as string;
 
-// Solo crear el cliente admin si tenemos el service_role key
-export const supabaseAdmin = serviceRoleKey
+// Solo crear el cliente admin si tenemos tanto la URL como el service_role key
+export const supabaseAdmin = (url && serviceRoleKey)
   ? createClient(url, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
