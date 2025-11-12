@@ -254,28 +254,34 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   }
 
   async function handleDeleteOrder(orderId: string) {
-    if (!confirm("¿Estás seguro de que deseas cancelar esta orden? La orden se marcará como cancelada y dejará de sumar a las ganancias, pero se mantendrá en el historial.")) {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta orden definitivamente? Esta acción no se puede deshacer y la orden será borrada permanentemente de la base de datos.")) {
       return;
     }
 
     setDeletingOrderId(orderId);
 
     try {
-      // En lugar de eliminar, marcar como cancelada
+      // Primero eliminar las notas relacionadas
+      await supabase
+        .from("order_notes")
+        .delete()
+        .eq("order_id", orderId);
+
+      // Luego eliminar la orden definitivamente
       const { error } = await supabase
         .from("orders")
-        .update({ status: "cancelled" })
+        .delete()
         .eq("id", orderId);
 
       if (error) {
-        alert(`Error al cancelar la orden: ${error.message}`);
+        alert(`Error al eliminar la orden: ${error.message}`);
       } else {
         load(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
       }
     } catch (error) {
-      console.error("Error cancelling order:", error);
-      alert("Error al cancelar la orden. Intenta nuevamente.");
+      console.error("Error deleting order:", error);
+      alert("Error al eliminar la orden. Intenta nuevamente.");
     } finally {
       setDeletingOrderId(null);
     }
@@ -492,13 +498,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                   {updatingStatusId === o.id ? "..." : "Devolver"}
                                 </button>
                               )}
-                              {isAdmin && (o.status !== "returned" && o.status !== "cancelled") && (
+                              {isAdmin && (
                                 <button
                                   onClick={() => handleDeleteOrder(o.id)}
                                   disabled={deletingOrderId === o.id}
                                   className="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  {deletingOrderId === o.id ? "..." : "Cancelar"}
+                                  {deletingOrderId === o.id ? "..." : "Eliminar"}
                                 </button>
                               )}
                             </>
