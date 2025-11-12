@@ -30,7 +30,7 @@ export default function AdminDashboard() {
         .lte("created_at", end.toISOString());
 
       if (allOrders) {
-        // Solo contar órdenes pagadas (con recibo) en las ganancias
+        // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas
         const paidOrders = allOrders.filter((r) => r.status === "paid");
         const monthGain = paidOrders.reduce(
           (s, r) => s + (r.commission_amount ?? 0),
@@ -39,7 +39,7 @@ export default function AdminDashboard() {
         const pendingAll = allOrders
           .filter((r) => r.status === "pending")
           .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
-        // Compras solo de órdenes pagadas
+        // Compras solo de órdenes pagadas (excluyendo devueltas y canceladas)
         const purchases = paidOrders.reduce(
           (s, r) => s + (r.replacement_cost ?? 0),
           0
@@ -97,9 +97,9 @@ export default function AdminDashboard() {
 
       <UserManagement />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <TechnicianPayments />
-        <OrdersTable />
+        <OrdersTable isAdmin={true} onUpdate={() => {}} />
       </div>
     </div>
   );

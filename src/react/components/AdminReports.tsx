@@ -9,6 +9,7 @@ export default function AdminReports() {
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [weeklyOrders, setWeeklyOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadTechnicians() {
@@ -30,7 +31,7 @@ export default function AdminReports() {
       let q = supabase
         .from("orders")
         .select("*, technician:users!technician_id(name)")
-        .eq("status", "paid") // Solo órdenes pagadas (con recibo)
+        .eq("status", "paid") // Solo órdenes pagadas (con recibo), excluyendo devueltas y canceladas
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString())
         .order("created_at", { ascending: false });
@@ -50,6 +51,54 @@ export default function AdminReports() {
     (s, o) => s + (o.commission_amount ?? 0),
     0
   );
+
+  async function handleDeleteOrder(orderId: string) {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.")) {
+      return;
+    }
+
+    setDeletingOrderId(orderId);
+
+    try {
+      // Primero eliminar las notas relacionadas
+      await supabase
+        .from("order_notes")
+        .delete()
+        .eq("order_id", orderId);
+
+      // Luego eliminar la orden
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+
+      if (error) {
+        alert(`Error al eliminar la orden: ${error.message}`);
+      } else {
+        // Recargar órdenes
+        const { start, end } = currentWeekRange(weekStart);
+        let q = supabase
+          .from("orders")
+          .select("*, technician:users!technician_id(name)")
+          .eq("status", "paid")
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString())
+          .order("created_at", { ascending: false });
+
+        if (selectedTechnician !== "all") {
+          q = q.eq("technician_id", selectedTechnician);
+        }
+
+        const { data } = await q;
+        setWeeklyOrders((data as Order[]) ?? []);
+      }
+    } catch (error) {
+      console.error("Error deleting order:", error);
+      alert("Error al eliminar la orden. Intenta nuevamente.");
+    } finally {
+      setDeletingOrderId(null);
+    }
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -108,6 +157,7 @@ export default function AdminReports() {
                     <th className="py-2 px-2 font-semibold">Método de Pago</th>
                     <th className="py-2 px-2 font-semibold">Pago Entregado</th>
                     <th className="py-2 px-2 font-semibold">Estado</th>
+                    <th className="py-2 px-2 font-semibold">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -132,6 +182,15 @@ export default function AdminReports() {
                         >
                           {o.status === "pending" ? "Pendiente" : "Pagado"}
                         </span>
+                      </td>
+                      <td className="py-2 px-2">
+                        <button
+                          onClick={() => handleDeleteOrder(o.id)}
+                          disabled={deletingOrderId === o.id}
+                          className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {deletingOrderId === o.id ? "Eliminando..." : "Eliminar"}
+                        </button>
                       </td>
                     </tr>
                   ))}

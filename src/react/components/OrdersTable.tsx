@@ -10,11 +10,12 @@ interface OrdersTableProps {
   technicianId?: string;
   refreshKey?: number;
   onUpdate?: () => void;
+  isAdmin?: boolean;
 }
 
-export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: OrdersTableProps) {
+export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false }: OrdersTableProps) {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<"all" | "paid" | "pending">("all");
+  const [filter, setFilter] = useState<"all" | "paid" | "pending" | "returned" | "cancelled">("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "current_week">("all");
   const [orderSearch, setOrderSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -28,6 +29,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
   const [noteFormVisible, setNoteFormVisible] = useState<Record<string, boolean>>({});
   const [savingNotes, setSavingNotes] = useState<Record<string, boolean>>({});
   const [notesError, setNotesError] = useState<Record<string, string | null>>({});
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -73,6 +76,12 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
     return orders.filter((o) => {
       if (filter !== "all" && o.status !== filter) {
         return false;
+      }
+      // Siempre excluir devueltas y canceladas de los filtros "all", "paid", "pending" a menos que se filtren explícitamente
+      if (filter === "all" || filter === "paid" || filter === "pending") {
+        if (o.status === "returned" || o.status === "cancelled") {
+          return false;
+        }
       }
 
       if (periodFilter === "current_week" && weekStart && weekEnd) {
@@ -244,6 +253,68 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
     setNoteFormVisible((prev) => ({ ...prev, [orderId]: false }));
   }
 
+  async function handleDeleteOrder(orderId: string) {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.")) {
+      return;
+    }
+
+    setDeletingOrderId(orderId);
+
+    try {
+      // Primero eliminar las notas relacionadas
+      await supabase
+        .from("order_notes")
+        .delete()
+        .eq("order_id", orderId);
+
+      // Luego eliminar la orden
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+
+      if (error) {
+        alert(`Error al eliminar la orden: ${error.message}`);
+      } else {
+        load(); // Recargar órdenes
+        if (onUpdate) onUpdate(); // Notificar al componente padre
+      }
+    } catch (error) {
+      console.error("Error deleting order:", error);
+      alert("Error al eliminar la orden. Intenta nuevamente.");
+    } finally {
+      setDeletingOrderId(null);
+    }
+  }
+
+  async function handleUpdateStatus(orderId: string, newStatus: "returned" | "cancelled") {
+    const statusText = newStatus === "returned" ? "devuelta" : "cancelada";
+    if (!confirm(`¿Estás seguro de que deseas marcar esta orden como ${statusText}? Esta orden dejará de sumar a las ganancias.`)) {
+      return;
+    }
+
+    setUpdatingStatusId(orderId);
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: newStatus })
+        .eq("id", orderId);
+
+      if (error) {
+        alert(`Error al actualizar el estado: ${error.message}`);
+      } else {
+        load(); // Recargar órdenes
+        if (onUpdate) onUpdate(); // Notificar al componente padre
+      }
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      alert("Error al actualizar el estado. Intenta nuevamente.");
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -253,34 +324,36 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
-        <h3 className="text-lg font-semibold text-slate-900">Órdenes de Reparación</h3>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+    <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-slate-900 mb-3">Órdenes de Reparación</h3>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 w-full">
           <input
             type="text"
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+            className="flex-1 min-w-0 sm:min-w-[180px] border border-slate-300 rounded-md px-3 py-2 text-sm"
             placeholder="Buscar por N° de orden..."
             value={orderSearch}
             onChange={(e) => setOrderSearch(e.target.value)}
           />
           <select
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+            className="w-full sm:w-auto sm:min-w-[160px] border border-slate-300 rounded-md px-3 py-2 text-sm"
             value={periodFilter}
             onChange={(e) => setPeriodFilter(e.target.value as "all" | "current_week")}
           >
             <option value="all">Todas las semanas</option>
             <option value="current_week">Semana actual (L-V)</option>
           </select>
-        <select
-          className="border border-slate-300 rounded-md px-3 py-2 text-sm"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as any)}
-        >
+          <select
+            className="w-full sm:w-auto sm:min-w-[140px] border border-slate-300 rounded-md px-3 py-2 text-sm"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as any)}
+          >
             <option value="all">Todos los estados</option>
-          <option value="paid">Con recibo (Pagadas)</option>
-          <option value="pending">Pendientes</option>
-        </select>
+            <option value="paid">Con recibo (Pagadas)</option>
+            <option value="pending">Pendientes</option>
+            <option value="returned">Devueltas</option>
+            <option value="cancelled">Canceladas</option>
+          </select>
         </div>
       </div>
       
@@ -288,54 +361,66 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
         <div className="text-center text-slate-500 py-8">No hay órdenes registradas</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b border-slate-200">
-                <th className="py-3 px-2 font-semibold text-slate-700">Fecha</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">N° Orden</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Equipo</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Servicio</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Método de Pago</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Estado</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">N° Recibo</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Comisión</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Notas</th>
-                {technicianId && <th className="py-3 px-2 font-semibold text-slate-700">Acciones</th>}
-              </tr>
-            </thead>
+          <div className="inline-block min-w-full align-middle">
+            <div className="overflow-visible">
+              <table className="min-w-full divide-y divide-slate-200 text-xs">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Fecha</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">N° Orden</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Equipo</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Servicio</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Pago</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Estado</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Recibo</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Comisión</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Notas</th>
+                    {(technicianId || isAdmin) && <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Acciones</th>}
+                  </tr>
+                </thead>
             <tbody>
               {filtered.map((o) => (
                 <Fragment key={o.id}>
                   <tr className={`border-b ${expandedOrderId === o.id ? "border-transparent" : "border-slate-100"} hover:bg-slate-50`}>
-                  <td className="py-3 px-2">{formatDate(o.created_at)}</td>
-                    <td className="py-3 px-2">{o.order_number || "-"}</td>
-                  <td className="py-3 px-2">{o.device}</td>
-                  <td className="py-3 px-2 text-slate-600">{o.service_description}</td>
-                  <td className="py-3 px-2">{o.payment_method || "-"}</td>
-                  <td className="py-3 px-2">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        o.status === "pending"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-emerald-100 text-emerald-700"
-                      }`}
-                    >
-                      {o.status === "pending" ? "Pendiente" : "Pagado"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-2">
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">{formatDate(o.created_at)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">{o.order_number || "-"}</td>
+                    <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
+                    <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px] truncate" title={o.service_description}>{o.service_description}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                          o.status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : o.status === "paid"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : o.status === "returned"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {o.status === "pending" 
+                          ? "Pend." 
+                          : o.status === "paid"
+                          ? "Pagado"
+                          : o.status === "returned"
+                          ? "Dev."
+                          : "Canc."}
+                      </span>
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">
                     {editingId === o.id ? (
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         <input
                           type="text"
-                          className="w-32 border border-slate-300 rounded-md px-2 py-1 text-sm"
+                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
                           value={editReceipt}
                           onChange={(e) => setEditReceipt(e.target.value)}
                           placeholder="N° Recibo"
                           autoFocus
                         />
                         <select
-                          className="w-32 border border-slate-300 rounded-md px-2 py-1 text-sm"
+                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
                           value={editPaymentMethod || o.payment_method || ""}
                           onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
                         >
@@ -346,62 +431,97 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                         </select>
                       </div>
                     ) : o.receipt_number ? (
-                      <span className="text-slate-700">{o.receipt_number}</span>
+                      <span className="text-slate-700 text-xs">{o.receipt_number}</span>
                     ) : (
-                      <span className="text-slate-400">-</span>
+                      <span className="text-slate-400 text-xs">-</span>
                     )}
                   </td>
-                  <td className="py-3 px-2 font-semibold text-brand">
-                    ${o.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
-                  </td>
-                    <td className="py-3 px-2">
+                    <td className="py-2 px-2 font-semibold text-brand whitespace-nowrap text-xs">
+                      ${o.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => void toggleNotes(o.id)}
-                        className="px-3 py-1 border border-slate-300 text-xs rounded hover:bg-slate-100 transition"
+                        className="px-2 py-0.5 border border-slate-300 text-xs rounded hover:bg-slate-100 transition"
                       >
-                        {expandedOrderId === o.id ? "Ocultar notas" : "Ver notas"}
+                        {expandedOrderId === o.id ? "Ocultar" : "Notas"}
                       </button>
                     </td>
-                  {technicianId && (
-                    <td className="py-3 px-2">
-                      {editingId === o.id ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleUpdateReceipt(o.id)}
-                            className="px-3 py-1 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
-                          >
-                            Guardar
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingId(null);
-                              setEditReceipt("");
-                              setEditPaymentMethod("");
-                            }}
-                            className="px-3 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition"
-                          >
-                            Cancelar
-                          </button>
+                    {(technicianId || isAdmin) && (
+                      <td className="py-2 px-2">
+                        <div className="flex flex-col gap-1">
+                          {editingId === o.id ? (
+                            <>
+                              <button
+                                onClick={() => handleUpdateReceipt(o.id)}
+                                className="px-2 py-0.5 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
+                              >
+                                Guardar
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingId(null);
+                                  setEditReceipt("");
+                                  setEditPaymentMethod("");
+                                }}
+                                className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition"
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {technicianId && o.status === "pending" && (
+                                <button
+                                  onClick={() => {
+                                    setEditingId(o.id);
+                                    setEditReceipt(o.receipt_number || "");
+                                    setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
+                                  }}
+                                  className="px-2 py-0.5 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
+                                >
+                                  Recibo
+                                </button>
+                              )}
+                              {(technicianId || isAdmin) && (o.status === "pending" || o.status === "paid") && (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdateStatus(o.id, "returned")}
+                                    disabled={updatingStatusId === o.id}
+                                    className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Marcar como devuelto"
+                                  >
+                                    {updatingStatusId === o.id ? "..." : "Devolver"}
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateStatus(o.id, "cancelled")}
+                                    disabled={updatingStatusId === o.id}
+                                    className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Marcar como cancelado"
+                                  >
+                                    {updatingStatusId === o.id ? "..." : "Cancelar"}
+                                  </button>
+                                </>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => handleDeleteOrder(o.id)}
+                                  disabled={deletingOrderId === o.id}
+                                  className="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {deletingOrderId === o.id ? "..." : "Eliminar"}
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
-                      ) : o.status === "pending" ? (
-                        <button
-                          onClick={() => {
-                            setEditingId(o.id);
-                            setEditReceipt(o.receipt_number || "");
-                            setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
-                          }}
-                          className="px-3 py-1 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition font-medium"
-                        >
-                          Agregar Recibo
-                        </button>
-                      ) : null}
-                    </td>
-                  )}
+                      </td>
+                    )}
                 </tr>
                   {expandedOrderId === o.id && (
                     <tr className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={technicianId ? 9 : 8} className="px-4 py-4">
+                      <td colSpan={(technicianId || isAdmin) ? 10 : 9} className="px-4 py-4">
                         <div className="space-y-4">
                           <div className="flex items-start justify-between">
                             <div>
@@ -487,8 +607,10 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                   )}
                 </Fragment>
               ))}
-            </tbody>
-          </table>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>

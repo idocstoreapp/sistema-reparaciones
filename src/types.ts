@@ -23,7 +23,7 @@ export interface Order {
   repair_cost: number;
   payment_method: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "";
   receipt_number?: string | null;
-  status: "pending" | "paid";
+  status: "pending" | "paid" | "returned" | "cancelled";
   commission_amount: number;
 }
 

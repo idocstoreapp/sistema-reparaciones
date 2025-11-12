@@ -46,6 +46,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       ]);
 
       if (orders) {
+        // Excluir órdenes devueltas y canceladas de los cálculos
         const earned = orders
           .filter((o) => o.status === "paid")
           .reduce((s, o) => s + (o.commission_amount ?? 0), 0);

@@ -35,7 +35,7 @@ export default function TechnicianPayments() {
           .from("orders")
           .select("commission_amount")
           .eq("technician_id", tech.id)
-          .eq("status", "paid")
+          .eq("status", "paid") // Solo órdenes pagadas, excluyendo devueltas y canceladas
           .gte("created_at", start.toISOString())
               .lte("created_at", end.toISOString()),
             supabase

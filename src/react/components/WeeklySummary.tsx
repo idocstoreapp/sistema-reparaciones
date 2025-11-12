@@ -65,17 +65,17 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       // Contar todas las órdenes de la semana (con y sin recibo)
       const count = weekOrders.length;
       
-      // Ganancia semanal: solo órdenes con recibo (pagadas)
+      // Ganancia semanal: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
       const weekGain = weekOrders
         .filter((r) => r.status === "paid")
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
-      // Pendientes: solo órdenes sin recibo
+      // Pendientes: solo órdenes sin recibo, excluyendo devueltas y canceladas
       const pending = weekOrders
         .filter((r) => r.status === "pending")
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
-      // Total del mes: solo órdenes con recibo (pagadas)
+      // Total del mes: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
       const monthGain = monthOrders
         .filter((r) => r.status === "paid")
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
