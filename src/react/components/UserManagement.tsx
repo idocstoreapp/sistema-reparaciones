@@ -307,7 +307,7 @@ export default function UserManagement() {
         <button
           type="button"
           onClick={() => setIsCreateOpen(true)}
-          className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition-colors"
+          className="px-4 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition-colors font-medium"
         >
           + Crear Usuario
         </button>
@@ -436,7 +436,7 @@ export default function UserManagement() {
               <button
                 type="submit"
                 disabled={actionLoading}
-                className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition disabled:opacity-50"
+                className="px-4 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition disabled:opacity-50 font-medium"
               >
                 {actionLoading ? "Creando..." : "Crear Usuario"}
               </button>
@@ -473,7 +473,7 @@ export default function UserManagement() {
               <button
                 type="submit"
                 disabled={actionLoading}
-                className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition disabled:opacity-50"
+                className="px-4 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition disabled:opacity-50 font-medium"
               >
                 {actionLoading ? "Guardando..." : "Guardar Cambios"}
               </button>
@@ -521,7 +521,7 @@ export default function UserManagement() {
                 type="button"
                 onClick={handlePasswordChange}
                 disabled={actionLoading || !newPassword || newPassword.length < 6}
-                className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition disabled:opacity-50"
+                className="px-4 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition disabled:opacity-50 font-medium"
               >
                 {actionLoading ? "Cambiando..." : "Cambiar Contraseña"}
               </button>

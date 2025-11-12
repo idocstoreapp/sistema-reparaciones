@@ -5,9 +5,11 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#2563eb",
-          light: "#3b82f6",
-          dark: "#1d4ed8"
+          DEFAULT: "#1e3a8a", // Azul oscuro principal (header) IDocStore
+          light: "#3b82f6", // Azul brillante para botones interactivos
+          dark: "#1e40af", // Azul oscuro más intenso
+          black: "#000000",
+          white: "#FFFFFF"
         }
       }
     },

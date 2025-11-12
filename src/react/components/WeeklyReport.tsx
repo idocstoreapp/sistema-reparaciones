@@ -314,7 +314,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
               <button
                 type="submit"
                 disabled={savingAdjustment}
-                className="px-4 py-2 text-xs bg-brand text-white rounded-md hover:bg-brand-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-xs bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {savingAdjustment ? "Guardando..." : "Guardar ajuste"}
               </button>

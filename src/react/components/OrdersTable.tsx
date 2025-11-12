@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
 import type { Order, OrderNote } from "@/types";
 import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
+import { calcCommission } from "@/lib/commission";
+import type { PaymentMethod } from "@/lib/commission";
 
 interface OrdersTableProps {
   technicianId?: string;
@@ -18,6 +20,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editReceipt, setEditReceipt] = useState("");
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>("");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [notesByOrder, setNotesByOrder] = useState<Record<string, OrderNote[]>>({});
   const [notesLoading, setNotesLoading] = useState<Record<string, boolean>>({});
@@ -96,6 +99,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
       return;
     }
 
+    // Obtener la orden actual para recalcular la comisión
+    const currentOrder = orders.find((o) => o.id === orderId);
+    if (!currentOrder) {
+      alert("Error: No se encontró la orden");
+      return;
+    }
+
     // Validar número de boleta con Bsale (OPCIONAL - no bloquea si falla)
     let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
     
@@ -124,14 +134,24 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
       return;
     }
 
+    // Recalcular comisión si hay método de pago
+    const paymentMethodToUse = editPaymentMethod || currentOrder.payment_method || "";
+    const newCommission = calcCommission({
+      paymentMethod: paymentMethodToUse as PaymentMethod,
+      costoRepuesto: currentOrder.replacement_cost || 0,
+      precioTotal: currentOrder.repair_cost || 0,
+    });
+
     const { error } = await supabase
       .from("orders")
       .update({
         receipt_number: editReceipt.trim(),
+        payment_method: paymentMethodToUse || null,
         status: "paid",
         bsale_number: bsaleData?.number || null,
         bsale_url: bsaleData?.url || null,
         bsale_total_amount: bsaleData?.totalAmount || null,
+        commission_amount: newCommission,
       })
       .eq("id", orderId);
 
@@ -140,6 +160,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
     } else {
       setEditingId(null);
       setEditReceipt("");
+      setEditPaymentMethod("");
       load(); // Recargar órdenes
       if (onUpdate) onUpdate(); // Notificar al componente padre
     }
@@ -304,14 +325,26 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                   </td>
                   <td className="py-3 px-2">
                     {editingId === o.id ? (
-                      <input
-                        type="text"
-                        className="w-32 border border-slate-300 rounded-md px-2 py-1 text-sm"
-                        value={editReceipt}
-                        onChange={(e) => setEditReceipt(e.target.value)}
-                        placeholder="N° Recibo"
-                        autoFocus
-                      />
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          className="w-32 border border-slate-300 rounded-md px-2 py-1 text-sm"
+                          value={editReceipt}
+                          onChange={(e) => setEditReceipt(e.target.value)}
+                          placeholder="N° Recibo"
+                          autoFocus
+                        />
+                        <select
+                          className="w-32 border border-slate-300 rounded-md px-2 py-1 text-sm"
+                          value={editPaymentMethod || o.payment_method || ""}
+                          onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                        >
+                          <option value="">Sin método</option>
+                          <option value="EFECTIVO">Efectivo</option>
+                          <option value="TARJETA">Tarjeta</option>
+                          <option value="TRANSFERENCIA">Transferencia</option>
+                        </select>
+                      </div>
                     ) : o.receipt_number ? (
                       <span className="text-slate-700">{o.receipt_number}</span>
                     ) : (
@@ -336,7 +369,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleUpdateReceipt(o.id)}
-                            className="px-3 py-1 bg-brand text-white text-xs rounded hover:bg-brand-dark transition"
+                            className="px-3 py-1 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
                           >
                             Guardar
                           </button>
@@ -344,6 +377,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                             onClick={() => {
                               setEditingId(null);
                               setEditReceipt("");
+                              setEditPaymentMethod("");
                             }}
                             className="px-3 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition"
                           >
@@ -355,8 +389,9 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                           onClick={() => {
                             setEditingId(o.id);
                             setEditReceipt(o.receipt_number || "");
+                            setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
                           }}
-                          className="px-3 py-1 bg-amber-500 text-white text-xs rounded hover:bg-amber-600 transition"
+                          className="px-3 py-1 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition font-medium"
                         >
                           Agregar Recibo
                         </button>
@@ -429,7 +464,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate }: 
                                   type="button"
                                   onClick={() => void handleAddNote(o.id)}
                                   disabled={savingNotes[o.id]}
-                                  className="px-4 py-2 bg-brand text-white text-xs rounded-md hover:bg-brand-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="px-4 py-2 bg-brand-light text-brand-white text-xs rounded-md hover:bg-white hover:text-brand border border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                   {savingNotes[o.id] ? "Guardando..." : "Guardar nota"}
                                 </button>

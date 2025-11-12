@@ -44,7 +44,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!orderNumber || !device || !service || !paymentMethod) {
+    if (!orderNumber || !device || !service) {
       alert("Por favor completa todos los campos obligatorios");
       return;
     }
@@ -62,7 +62,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         service_description: service,
         replacement_cost: replacementCost,
         repair_cost: precioTotal, // Precio total cobrado
-        payment_method: paymentMethod,
+        payment_method: paymentMethod || null,
         receipt_number: receiptNumber.trim() || null,
         status,
         commission_amount: commission,
@@ -188,18 +188,20 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Método de Pago *</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Método de Pago</label>
           <select
             className="w-full border border-slate-300 rounded-md px-3 py-2"
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-            required
           >
             <option value="">Seleccionar...</option>
             <option value="EFECTIVO">Efectivo</option>
             <option value="TARJETA">Tarjeta</option>
             <option value="TRANSFERENCIA">Transferencia</option>
           </select>
+          <p className="text-xs text-slate-500 mt-1">
+            Opcional - Se puede agregar después al agregar el recibo
+          </p>
         </div>
         
         <div>
@@ -253,7 +255,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-2 border-brand-light hover:border-white font-medium"
         >
           {loading ? "Guardando..." : "Registrar Orden de Reparación"}
         </button>

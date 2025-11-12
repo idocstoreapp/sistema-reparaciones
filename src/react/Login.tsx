@@ -35,13 +35,18 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand to-brand-dark">
       <form
         onSubmit={onLogin}
-        className="max-w-md w-full bg-white p-8 rounded-lg shadow-lg space-y-6"
+        className="max-w-md w-full bg-white p-8 rounded-lg shadow-2xl space-y-6"
       >
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Sistema de Reparaciones</h2>
+          <img 
+            src="/logo.png" 
+            alt="IDocStore Logo" 
+            className="h-56 w-auto mx-auto mb-4 object-contain"
+          />
+          <h2 className="text-2xl font-bold text-brand mb-2">Registro de Servicios</h2>
           <p className="text-slate-600">Ingresa tus credenciales</p>
         </div>
 
@@ -56,7 +61,7 @@ export default function Login() {
             Email
           </label>
           <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+            className="w-full border-2 border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
             type="email"
             placeholder="tu@email.com"
             value={email}
@@ -70,7 +75,7 @@ export default function Login() {
             Contraseña
           </label>
           <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+            className="w-full border-2 border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition-colors"
             type="password"
             placeholder="••••••••"
             value={pass}
@@ -82,7 +87,7 @@ export default function Login() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-brand text-white rounded-md py-2 font-medium hover:bg-brand-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-brand-light text-brand-white rounded-md py-2 font-medium hover:bg-white hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-2 border-brand-light hover:border-white"
         >
           {loading ? "Ingresando..." : "Entrar"}
         </button>

@@ -14,20 +14,27 @@ function Header({ userName, userRole }: { userName: string; userRole: string }) 
   }
 
   return (
-    <header className="bg-white shadow-sm border-b border-slate-200 mb-6">
+    <header className="bg-brand shadow-lg border-b-2 border-brand-light mb-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              Sistema de Reparaciones
-            </h1>
-            <p className="text-sm text-slate-600">
-              {userName} • {userRole === "admin" ? "Administrador" : "Técnico"}
-            </p>
+        <div className="flex items-center justify-between h-32">
+          <div className="flex items-center gap-4">
+            <img 
+              src="/logo.png" 
+              alt="IDocStore Logo" 
+              className="h-40 w-auto object-contain"
+            />
+            <div>
+              <h1 className="text-xl font-bold text-brand-white">
+                Registro de Servicios
+              </h1>
+              <p className="text-sm text-brand-white">
+                {userName} • {userRole === "admin" ? "Administrador" : "Técnico"}
+              </p>
+            </div>
           </div>
           <button
             onClick={handleLogout}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-brand-white bg-brand-light border-2 border-brand-light rounded-md hover:bg-white hover:text-brand transition-colors"
           >
             Cerrar Sesión
           </button>
@@ -126,10 +133,10 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand mx-auto mb-4"></div>
-          <p className="text-slate-600">Cargando...</p>
-        </div>
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand border-t-transparent mx-auto mb-4"></div>
+        <p className="text-slate-600">Cargando...</p>
+      </div>
       </div>
     );
   }
@@ -144,7 +151,7 @@ export default function Dashboard() {
               "No encontramos la información de tu usuario. Verifica que tengas un perfil con rol asignado en la base de datos."}
           </p>
           <button
-            className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand/90 transition"
+            className="px-4 py-2 bg-brand-light text-brand-white rounded-md hover:bg-white hover:text-brand border-2 border-brand-light hover:border-white transition font-medium"
             onClick={() => {
               window.location.href = "/login";
             }}
