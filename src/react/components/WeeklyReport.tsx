@@ -12,6 +12,8 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
   const [totalEarned, setTotalEarned] = useState(0);
   const [totalPending, setTotalPending] = useState(0);
   const [lastPayment, setLastPayment] = useState<string | null>(null);
+  const [returnsDiscount, setReturnsDiscount] = useState(0);
+  const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
   const [adjustments, setAdjustments] = useState<SalaryAdjustment[]>([]);
   const [loadingAdjustments, setLoadingAdjustments] = useState(false);
   const [adjustmentFormOpen, setAdjustmentFormOpen] = useState(false);
@@ -54,6 +56,11 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           .filter((o) => o.status === "pending")
           .reduce((s, o) => s + (o.commission_amount ?? 0), 0);
 
+        // Calcular descuento por devoluciones y cancelaciones
+        // Solo contar órdenes que estaban pagadas antes de ser devueltas/canceladas
+        const returned = orders.filter((o) => o.status === "returned" || o.status === "cancelled");
+        const returnsDiscount = returned.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
+
         const lastPaid = orders
           .filter((o) => o.status === "paid" && o.receipt_number)
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
@@ -61,6 +68,9 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         setTotalEarned(earned);
         setTotalPending(pending);
         setLastPayment(lastPaid ? formatDate(lastPaid.created_at) : null);
+        // Guardar el descuento por devoluciones en el estado
+        setReturnsDiscount(returnsDiscount);
+        setReturnedOrders(returned);
       }
 
       setAdjustments(((adjustmentData as SalaryAdjustment[]) ?? []).sort(
@@ -81,7 +91,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
     [adjustments]
   );
 
-  const netEarned = Math.max(totalEarned - totalAdjustments, 0);
+  const netEarned = Math.max(totalEarned - totalAdjustments - returnsDiscount, 0);
   const availableForAdvance = Math.max(netEarned, 0);
 
   if (loading) {
@@ -161,6 +171,19 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           </span>
         </div>
 
+        {returnsDiscount > 0 && (
+          <div className="flex justify-between items-center">
+            <span className="text-slate-600">Descuento por devoluciones/cancelaciones:</span>
+            <span className="font-semibold text-red-600">
+              -$
+              {returnsDiscount.toLocaleString('es-CL', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              })}
+            </span>
+          </div>
+        )}
+
         <div className="flex justify-between items-center">
           <span className="text-slate-600 font-medium">Total real disponible:</span>
           <span className="font-semibold text-brand">
@@ -235,7 +258,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           <div>
             <h4 className="text-sm font-semibold text-slate-800">Ajustes de sueldo de la semana</h4>
             <p className="text-xs text-slate-500">
-              Descuentos y adelantos se restan del total ganado. Saldo disponible: $
+              Descuentos, adelantos y devoluciones se restan del total ganado. Saldo disponible: $
               {availableForAdvance.toLocaleString('es-CL', {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
@@ -326,12 +349,37 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         <div className="space-y-3">
           {loadingAdjustments ? (
             <div className="text-sm text-slate-500">Cargando ajustes...</div>
-          ) : adjustments.length === 0 ? (
+          ) : adjustments.length === 0 && returnedOrders.length === 0 ? (
             <div className="text-sm text-slate-500">
               No hay ajustes registrados esta semana.
             </div>
           ) : (
             <div className="space-y-2">
+              {/* Mostrar devoluciones/cancelaciones primero */}
+              {returnedOrders.map((order) => {
+                const dateTime = new Date(order.created_at).toLocaleString("es-CL", {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                });
+                return (
+                  <div
+                    key={order.id}
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-red-200 bg-red-50/30 rounded-md px-3 py-2 text-sm"
+                  >
+                    <div>
+                      <span className="font-medium text-red-600">
+                        {order.status === "returned" ? "Devolución" : "Cancelación"}
+                      </span>
+                      <span className="text-slate-600 ml-2">- Orden #{order.order_number}</span>
+                      <div className="text-xs text-slate-400">{dateTime}</div>
+                    </div>
+                    <span className="font-semibold text-red-600">
+                      -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                    </span>
+                  </div>
+                );
+              })}
+              {/* Mostrar ajustes de sueldo */}
               {adjustments.map((adj) => {
                 const dateTime = new Date(adj.created_at).toLocaleString("es-CL", {
                   dateStyle: "short",

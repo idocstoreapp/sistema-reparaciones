@@ -16,6 +16,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     weekNet: 0,
     pending: 0,
     monthGain: 0,
+    returnsAndCancellations: 0,
+    totalReturnsAndCancellations: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -41,6 +43,13 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .gte("created_at", ms.toISOString())
         .lte("created_at", me.toISOString());
 
+      // Consulta para total histórico de devoluciones/cancelaciones (sin límite de tiempo)
+      const { data: totalReturns, error: totalReturnsError } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("technician_id", technicianId)
+        .in("status", ["returned", "cancelled"]);
+
       const { data: weeklyAdjustments, error: adjustmentsError } = await supabase
         .from("salary_adjustments")
         .select("amount")
@@ -53,6 +62,9 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       }
       if (monthError) {
         console.error("Error loading month orders:", monthError);
+      }
+      if (totalReturnsError) {
+        console.error("Error loading total returns:", totalReturnsError);
       }
       if (adjustmentsError) {
         console.error("Error loading weekly adjustments:", adjustmentsError);
@@ -80,6 +92,14 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .filter((r) => r.status === "paid")
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
 
+      // Contar devoluciones y cancelaciones (garantías) de la semana
+      const returnsAndCancellations = weekOrders.filter(
+        (r) => r.status === "returned" || r.status === "cancelled"
+      ).length;
+
+      // Contar total histórico de devoluciones y cancelaciones (sin límite de tiempo)
+      const totalReturnsAndCancellations = (totalReturns ?? []).length;
+
       const weekAdjustmentsTotal = adjustmentsList.reduce(
         (sum, adj) => sum + (adj?.amount ?? 0),
         0
@@ -93,6 +113,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         weekNet,
         pending,
         monthGain,
+        returnsAndCancellations,
+        totalReturnsAndCancellations,
       });
       setLoading(false);
     }
@@ -101,8 +123,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="bg-white rounded-lg shadow-md p-6 animate-pulse">
             <div className="h-4 bg-slate-200 rounded w-3/4 mb-2"></div>
             <div className="h-8 bg-slate-200 rounded w-1/2"></div>
@@ -113,7 +135,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
       <KpiCard
         title="Servicios de la Semana"
         value={kpis.count}
@@ -155,6 +177,18 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         title="Total del Mes (Con Recibo)"
         value={`$${kpis.monthGain.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
         icon="📊"
+      />
+      <KpiCard
+        title="Devoluciones/Garantías"
+        value={
+          <>
+            <span>{kpis.returnsAndCancellations}</span>
+            <span className="block text-sm font-normal text-slate-500 mt-1">
+              Total histórico: {kpis.totalReturnsAndCancellations}
+            </span>
+          </>
+        }
+        icon="🔄"
       />
     </div>
   );

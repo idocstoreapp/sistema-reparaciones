@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
-import type { Profile, SalaryAdjustment } from "@/types";
+import type { Profile, SalaryAdjustment, Order } from "@/types";
 
 export default function TechnicianPayments() {
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
   const [adjustments, setAdjustments] = useState<SalaryAdjustment[]>([]);
+  const [returnedOrders, setReturnedOrders] = useState<Order[]>([]);
   const [weeklyTotals, setWeeklyTotals] = useState<Record<string, number>>({});
   const [weeklyAdjustmentTotals, setWeeklyAdjustmentTotals] = useState<Record<string, number>>({});
+  const [weeklyReturnsTotals, setWeeklyReturnsTotals] = useState<Record<string, number>>({});
 
   useEffect(() => {
     async function load() {
@@ -28,9 +30,11 @@ export default function TechnicianPayments() {
       const totals: Record<string, number> = {};
       const adjustmentTotals: Record<string, number> = {};
 
+      const returnsTotals: Record<string, number> = {};
+
       await Promise.all(
         technicians.map(async (tech) => {
-          const [{ data: orders }, { data: adjustmentsData }] = await Promise.all([
+          const [{ data: orders }, { data: adjustmentsData }, { data: returnedData }] = await Promise.all([
             supabase
           .from("orders")
           .select("commission_amount")
@@ -44,17 +48,27 @@ export default function TechnicianPayments() {
               .eq("technician_id", tech.id)
               .gte("created_at", start.toISOString())
               .lte("created_at", end.toISOString()),
+            supabase
+              .from("orders")
+              .select("commission_amount")
+              .eq("technician_id", tech.id)
+              .in("status", ["returned", "cancelled"])
+              .gte("created_at", start.toISOString())
+              .lte("created_at", end.toISOString()),
           ]);
 
         totals[tech.id] =
           orders?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
           adjustmentTotals[tech.id] =
             adjustmentsData?.reduce((s, adj) => s + (adj.amount ?? 0), 0) ?? 0;
+          returnsTotals[tech.id] =
+            returnedData?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
         })
       );
 
       setWeeklyTotals(totals);
       setWeeklyAdjustmentTotals(adjustmentTotals);
+      setWeeklyReturnsTotals(returnsTotals);
     }
     if (technicians.length > 0) void loadWeeklyData();
   }, [technicians]);
@@ -63,19 +77,31 @@ export default function TechnicianPayments() {
     async function loadAdjustments() {
       if (!selectedTech) {
         setAdjustments([]);
+        setReturnedOrders([]);
         return;
       }
 
       const { start, end } = currentWeekRange();
-      const { data } = await supabase
-        .from("salary_adjustments")
-        .select("*")
-        .eq("technician_id", selectedTech)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .order("created_at", { ascending: false });
+      const [{ data: adjustmentsData }, { data: returnedData }] = await Promise.all([
+        supabase
+          .from("salary_adjustments")
+          .select("*")
+          .eq("technician_id", selectedTech)
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString())
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("orders")
+          .select("*")
+          .eq("technician_id", selectedTech)
+          .in("status", ["returned", "cancelled"])
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString())
+          .order("created_at", { ascending: false }),
+      ]);
 
-      setAdjustments((data as SalaryAdjustment[]) ?? []);
+      setAdjustments((adjustmentsData as SalaryAdjustment[]) ?? []);
+      setReturnedOrders((returnedData as Order[]) ?? []);
     }
     loadAdjustments();
   }, [selectedTech]);
@@ -90,7 +116,8 @@ export default function TechnicianPayments() {
         {technicians.map((tech) => {
           const weeklyTotal = weeklyTotals[tech.id] ?? 0;
           const adjustmentTotal = weeklyAdjustmentTotals[tech.id] ?? 0;
-          const netTotal = Math.max(weeklyTotal - adjustmentTotal, 0);
+          const returnsTotal = weeklyReturnsTotals[tech.id] ?? 0;
+          const netTotal = Math.max(weeklyTotal - adjustmentTotal - returnsTotal, 0);
           const isSelected = selectedTech === tech.id;
 
           return (
@@ -109,6 +136,11 @@ export default function TechnicianPayments() {
                   <div className="text-sm text-slate-600">
                     Total semanal (con recibo): $
                     {weeklyTotal.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    {returnsTotal > 0 && (
+                      <span className="ml-2 text-xs text-red-600">
+                        (Devoluciones: -${returnsTotal.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                      </span>
+                    )}
                     <span className="ml-2 text-xs text-slate-500">
                       (Neto estimado: $
                       {netTotal.toLocaleString('es-CL', {
@@ -125,30 +157,76 @@ export default function TechnicianPayments() {
               {isSelected && (
                 <div className="mt-4 pt-4 border-t border-slate-200">
                   <h4 className="font-medium text-slate-700 mb-2">
-                    Ajustes de Sueldo
+                    Ajustes de Sueldo y Devoluciones
                   </h4>
-                  <div className="flex items-center justify-between text-sm text-slate-600 mb-3">
-                    <span>
-                      Total ajustes: $
-                      {adjustmentTotal.toLocaleString('es-CL', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      Saldo estimado: $
-                      {netTotal.toLocaleString('es-CL', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
+                  <div className="flex flex-col gap-2 text-sm text-slate-600 mb-3">
+                    <div className="flex items-center justify-between">
+                      <span>
+                        Total ajustes: $
+                        {adjustmentTotal.toLocaleString('es-CL', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                    </div>
+                    {returnsTotal > 0 && (
+                      <div className="flex items-center justify-between text-red-600">
+                        <span>
+                          Total devoluciones/cancelaciones: -$
+                          {returnsTotal.toLocaleString('es-CL', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">
+                        Saldo estimado: $
+                        {netTotal.toLocaleString('es-CL', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                    </div>
                   </div>
-                  {adjustments.length === 0 ? (
+                  {adjustments.length === 0 && returnedOrders.length === 0 ? (
                     <p className="text-sm text-slate-500">
-                      No hay ajustes registrados esta semana.
+                      No hay ajustes ni devoluciones registradas esta semana.
                     </p>
                   ) : (
                     <div className="space-y-2">
+                      {/* Mostrar devoluciones/cancelaciones primero */}
+                      {returnedOrders.map((order) => {
+                        const dateTime = new Date(order.created_at).toLocaleString("es-CL", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        });
+                        return (
+                          <div
+                            key={order.id}
+                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm p-3 bg-red-50/30 border border-red-200 rounded-md gap-2"
+                          >
+                            <div>
+                              <div>
+                                <span className="font-medium text-red-600">
+                                  {order.status === "returned" ? "Devolución" : "Cancelación"}
+                                </span>
+                                <span className="text-slate-600 ml-2">
+                                  - Orden #{order.order_number} • {order.device}
+                                </span>
+                              </div>
+                              <div className="text-xs text-slate-400 mt-1">
+                                {dateTime}
+                              </div>
+                            </div>
+                            <span className="font-semibold text-red-600">
+                              -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {/* Mostrar ajustes de sueldo */}
                       {adjustments.map((adj) => (
                         <div
                           key={adj.id}

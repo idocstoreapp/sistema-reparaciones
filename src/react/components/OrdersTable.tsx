@@ -254,34 +254,28 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   }
 
   async function handleDeleteOrder(orderId: string) {
-    if (!confirm("¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.")) {
+    if (!confirm("¿Estás seguro de que deseas cancelar esta orden? La orden se marcará como cancelada y dejará de sumar a las ganancias, pero se mantendrá en el historial.")) {
       return;
     }
 
     setDeletingOrderId(orderId);
 
     try {
-      // Primero eliminar las notas relacionadas
-      await supabase
-        .from("order_notes")
-        .delete()
-        .eq("order_id", orderId);
-
-      // Luego eliminar la orden
+      // En lugar de eliminar, marcar como cancelada
       const { error } = await supabase
         .from("orders")
-        .delete()
+        .update({ status: "cancelled" })
         .eq("id", orderId);
 
       if (error) {
-        alert(`Error al eliminar la orden: ${error.message}`);
+        alert(`Error al cancelar la orden: ${error.message}`);
       } else {
         load(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
       }
     } catch (error) {
-      console.error("Error deleting order:", error);
-      alert("Error al eliminar la orden. Intenta nuevamente.");
+      console.error("Error cancelling order:", error);
+      alert("Error al cancelar la orden. Intenta nuevamente.");
     } finally {
       setDeletingOrderId(null);
     }
@@ -381,7 +375,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
             <tbody>
               {filtered.map((o) => (
                 <Fragment key={o.id}>
-                  <tr className={`border-b ${expandedOrderId === o.id ? "border-transparent" : "border-slate-100"} hover:bg-slate-50`}>
+                  <tr className={`border-b ${expandedOrderId === o.id ? "border-transparent" : "border-slate-100"} ${
+                    o.status === "returned" || o.status === "cancelled" 
+                      ? "bg-red-50/30 hover:bg-red-50/50" 
+                      : "hover:bg-slate-50"
+                  }`}>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">{formatDate(o.created_at)}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">{o.order_number || "-"}</td>
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
@@ -485,32 +483,22 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                 </button>
                               )}
                               {(technicianId || isAdmin) && (o.status === "pending" || o.status === "paid") && (
-                                <>
-                                  <button
-                                    onClick={() => handleUpdateStatus(o.id, "returned")}
-                                    disabled={updatingStatusId === o.id}
-                                    className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Marcar como devuelto"
-                                  >
-                                    {updatingStatusId === o.id ? "..." : "Devolver"}
-                                  </button>
-                                  <button
-                                    onClick={() => handleUpdateStatus(o.id, "cancelled")}
-                                    disabled={updatingStatusId === o.id}
-                                    className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Marcar como cancelado"
-                                  >
-                                    {updatingStatusId === o.id ? "..." : "Cancelar"}
-                                  </button>
-                                </>
+                                <button
+                                  onClick={() => handleUpdateStatus(o.id, "returned")}
+                                  disabled={updatingStatusId === o.id}
+                                  className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Marcar como devuelto"
+                                >
+                                  {updatingStatusId === o.id ? "..." : "Devolver"}
+                                </button>
                               )}
-                              {isAdmin && (
+                              {isAdmin && (o.status !== "returned" && o.status !== "cancelled") && (
                                 <button
                                   onClick={() => handleDeleteOrder(o.id)}
                                   disabled={deletingOrderId === o.id}
                                   className="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  {deletingOrderId === o.id ? "..." : "Eliminar"}
+                                  {deletingOrderId === o.id ? "..." : "Cancelar"}
                                 </button>
                               )}
                             </>

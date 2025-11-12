@@ -53,27 +53,21 @@ export default function AdminReports() {
   );
 
   async function handleDeleteOrder(orderId: string) {
-    if (!confirm("¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.")) {
+    if (!confirm("¿Estás seguro de que deseas cancelar esta orden? La orden se marcará como cancelada y dejará de sumar a las ganancias, pero se mantendrá en el historial.")) {
       return;
     }
 
     setDeletingOrderId(orderId);
 
     try {
-      // Primero eliminar las notas relacionadas
-      await supabase
-        .from("order_notes")
-        .delete()
-        .eq("order_id", orderId);
-
-      // Luego eliminar la orden
+      // En lugar de eliminar, marcar como cancelada
       const { error } = await supabase
         .from("orders")
-        .delete()
+        .update({ status: "cancelled" })
         .eq("id", orderId);
 
       if (error) {
-        alert(`Error al eliminar la orden: ${error.message}`);
+        alert(`Error al cancelar la orden: ${error.message}`);
       } else {
         // Recargar órdenes
         const { start, end } = currentWeekRange(weekStart);
@@ -93,8 +87,8 @@ export default function AdminReports() {
         setWeeklyOrders((data as Order[]) ?? []);
       }
     } catch (error) {
-      console.error("Error deleting order:", error);
-      alert("Error al eliminar la orden. Intenta nuevamente.");
+      console.error("Error cancelling order:", error);
+      alert("Error al cancelar la orden. Intenta nuevamente.");
     } finally {
       setDeletingOrderId(null);
     }
@@ -189,7 +183,7 @@ export default function AdminReports() {
                           disabled={deletingOrderId === o.id}
                           className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {deletingOrderId === o.id ? "Eliminando..." : "Eliminar"}
+                          {deletingOrderId === o.id ? "..." : "Cancelar"}
                         </button>
                       </td>
                     </tr>

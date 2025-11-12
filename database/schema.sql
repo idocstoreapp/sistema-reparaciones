@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS orders (
   repair_cost NUMERIC NOT NULL DEFAULT 0,      -- G (Costo Reparación para EFECTIVO)
   payment_method TEXT NOT NULL DEFAULT '' CHECK (payment_method IN ('', 'EFECTIVO', 'TARJETA', 'TRANSFERENCIA')),
   receipt_number TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'returned', 'cancelled')),
   commission_amount NUMERIC NOT NULL DEFAULT 0,
   -- Campos adicionales para reportes
   week_start DATE,
