@@ -16,6 +16,12 @@ export default function AdminDashboard() {
     warrantyOrders: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Función para recargar KPIs
+  const refreshKPIs = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   useEffect(() => {
     async function load() {
@@ -39,11 +45,11 @@ export default function AdminDashboard() {
         const pendingAll = allOrders
           .filter((r) => r.status === "pending")
           .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
-        // Compras solo de órdenes pagadas (excluyendo devueltas y canceladas)
-        const purchases = paidOrders.reduce(
-          (s, r) => s + (r.replacement_cost ?? 0),
-          0
-        );
+        // Compras solo de órdenes pagadas con replacement_cost > 0 y supplier_id no null
+        // (excluyendo devueltas y canceladas, mismo criterio que SupplierPurchases)
+        const purchases = paidOrders
+          .filter((r) => (r.replacement_cost ?? 0) > 0 && r.supplier_id)
+          .reduce((s, r) => s + (r.replacement_cost ?? 0), 0);
 
         setKpis({
           monthGain,
@@ -55,7 +61,7 @@ export default function AdminDashboard() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [refreshKey]);
 
   return (
     <div className="space-y-6">
@@ -91,15 +97,15 @@ export default function AdminDashboard() {
         />
       </div>
 
-      <AdminReports />
+      <AdminReports key={refreshKey} />
 
-      <SupplierPurchases />
+      <SupplierPurchases key={refreshKey} />
 
       <UserManagement />
 
       <div className="grid grid-cols-1 gap-6">
-        <TechnicianPayments />
-        <OrdersTable isAdmin={true} onUpdate={() => {}} />
+        <TechnicianPayments key={refreshKey} />
+        <OrdersTable isAdmin={true} onUpdate={refreshKPIs} />
       </div>
     </div>
   );

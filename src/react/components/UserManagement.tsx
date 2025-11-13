@@ -160,6 +160,8 @@ export default function UserManagement() {
         local: "",
       });
       await loadUsers();
+      // Disparar evento para notificar a otros componentes (TechnicianPayments, AdminReports)
+      window.dispatchEvent(new CustomEvent('userCreated'));
     } catch (err: any) {
       setError(err.message || "Error al crear el usuario");
     } finally {
@@ -206,6 +208,8 @@ export default function UserManagement() {
       setSuccess("Usuario actualizado exitosamente");
       setEditingUser(null);
       await loadUsers();
+      // Disparar evento para notificar a otros componentes (TechnicianPayments, AdminReports)
+      window.dispatchEvent(new CustomEvent('userUpdated'));
     } catch (err: any) {
       setError(err.message || "Error al actualizar el usuario");
     } finally {
@@ -268,6 +272,8 @@ export default function UserManagement() {
       setSuccess("Usuario eliminado exitosamente");
       setDeleteUser(null);
       await loadUsers();
+      // Disparar evento para notificar a otros componentes (TechnicianPayments, AdminReports)
+      window.dispatchEvent(new CustomEvent('userDeleted'));
     } catch (err: any) {
       setError(err.message || "Error al eliminar el usuario");
     } finally {

@@ -20,8 +20,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [orderSearch, setOrderSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCostsId, setEditingCostsId] = useState<string | null>(null);
   const [editReceipt, setEditReceipt] = useState("");
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>("");
+  const [editReplacementCost, setEditReplacementCost] = useState<number>(0);
+  const [editRepairCost, setEditRepairCost] = useState<number>(0);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [notesByOrder, setNotesByOrder] = useState<Record<string, OrderNote[]>>({});
   const [notesLoading, setNotesLoading] = useState<Record<string, boolean>>({});
@@ -31,6 +34,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [notesError, setNotesError] = useState<Record<string, string | null>>({});
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [updatingCostsId, setUpdatingCostsId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -172,6 +176,65 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       setEditPaymentMethod("");
       load(); // Recargar órdenes
       if (onUpdate) onUpdate(); // Notificar al componente padre
+      // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
+      window.dispatchEvent(new CustomEvent('orderUpdated'));
+    }
+  }
+
+  async function handleUpdateCosts(orderId: string) {
+    // Obtener la orden actual para recalcular la comisión
+    const currentOrder = orders.find((o) => o.id === orderId);
+    if (!currentOrder) {
+      alert("Error: No se encontró la orden");
+      return;
+    }
+
+    // Validar que los montos sean números válidos
+    if (isNaN(editReplacementCost) || editReplacementCost < 0) {
+      alert("El costo del repuesto debe ser un número válido mayor o igual a 0");
+      return;
+    }
+    if (isNaN(editRepairCost) || editRepairCost < 0) {
+      alert("El costo de reparación debe ser un número válido mayor o igual a 0");
+      return;
+    }
+
+    // Recalcular comisión con los nuevos montos
+    const paymentMethodToUse = currentOrder.payment_method || "";
+    const newCommission = calcCommission({
+      paymentMethod: paymentMethodToUse as PaymentMethod,
+      costoRepuesto: editReplacementCost,
+      precioTotal: editRepairCost,
+    });
+
+    setUpdatingCostsId(orderId);
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          replacement_cost: editReplacementCost,
+          repair_cost: editRepairCost,
+          commission_amount: newCommission,
+        })
+        .eq("id", orderId);
+
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        setEditingCostsId(null);
+        setEditReplacementCost(0);
+        setEditRepairCost(0);
+        load(); // Recargar órdenes
+        if (onUpdate) onUpdate(); // Notificar al componente padre para actualizar KPIs
+        // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
+        window.dispatchEvent(new CustomEvent('orderUpdated'));
+      }
+    } catch (error) {
+      console.error("Error updating order costs:", error);
+      alert("Error al actualizar los montos. Intenta nuevamente.");
+    } finally {
+      setUpdatingCostsId(null);
     }
   }
 
@@ -278,6 +341,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       } else {
         load(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
+        // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
+        window.dispatchEvent(new CustomEvent('orderDeleted'));
       }
     } catch (error) {
       console.error("Error deleting order:", error);
@@ -306,6 +371,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       } else {
         load(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
+        // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
+        window.dispatchEvent(new CustomEvent('orderUpdated'));
       }
     } catch (error) {
       console.error("Error updating order status:", error);
@@ -371,6 +438,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Equipo</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Servicio</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Pago</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Repuesto</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Costo Rep.</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Estado</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Recibo</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Comisión</th>
@@ -391,6 +460,41 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
                     <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px] truncate" title={o.service_description}>{o.service_description}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
+                      {editingCostsId === o.id ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="w-20 border border-slate-300 rounded px-1 py-0.5 text-xs"
+                          value={editReplacementCost}
+                          onChange={(e) => setEditReplacementCost(parseFloat(e.target.value) || 0)}
+                          placeholder="0"
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-slate-700">
+                          ${(o.replacement_cost || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
+                      {editingCostsId === o.id ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="w-20 border border-slate-300 rounded px-1 py-0.5 text-xs"
+                          value={editRepairCost}
+                          onChange={(e) => setEditRepairCost(parseFloat(e.target.value) || 0)}
+                          placeholder="0"
+                        />
+                      ) : (
+                        <span className="text-slate-700">
+                          ${(o.repair_cost || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 px-2 whitespace-nowrap">
                       <span
                         className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${
@@ -455,7 +559,28 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     {(technicianId || isAdmin) && (
                       <td className="py-2 px-2">
                         <div className="flex flex-col gap-1">
-                          {editingId === o.id ? (
+                          {editingCostsId === o.id ? (
+                            <>
+                              <button
+                                onClick={() => handleUpdateCosts(o.id)}
+                                disabled={updatingCostsId === o.id}
+                                className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {updatingCostsId === o.id ? "Guardando..." : "Guardar"}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingCostsId(null);
+                                  setEditReplacementCost(0);
+                                  setEditRepairCost(0);
+                                }}
+                                disabled={updatingCostsId === o.id}
+                                className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition disabled:opacity-50"
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : editingId === o.id ? (
                             <>
                               <button
                                 onClick={() => handleUpdateReceipt(o.id)}
@@ -476,6 +601,19 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                             </>
                           ) : (
                             <>
+                              {isAdmin && (o.status === "pending" || o.status === "paid") && (
+                                <button
+                                  onClick={() => {
+                                    setEditingCostsId(o.id);
+                                    setEditReplacementCost(o.replacement_cost || 0);
+                                    setEditRepairCost(o.repair_cost || 0);
+                                  }}
+                                  className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition font-medium"
+                                  title="Editar montos de repuesto y reparación"
+                                >
+                                  Editar Montos
+                                </button>
+                              )}
                               {technicianId && o.status === "pending" && (
                                 <button
                                   onClick={() => {

@@ -10,6 +10,10 @@ function getSupabaseClient() {
   if (!url || !anon) {
     if (typeof window !== 'undefined') {
       // Solo en el navegador, mostrar error claro
+      console.error('[supabase] Missing environment variables:', {
+        hasUrl: !!url,
+        hasAnonKey: !!anon,
+      });
       throw new Error("Missing Supabase environment variables. Please set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY");
     }
     // Durante build, crear un cliente dummy que no se usará

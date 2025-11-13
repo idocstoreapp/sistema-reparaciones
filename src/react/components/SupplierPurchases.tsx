@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDate } from "@/lib/date";
 import type { Order, Supplier } from "@/types";
@@ -49,93 +49,109 @@ export default function SupplierPurchases() {
     loadSuppliers();
   }, []);
 
-  useEffect(() => {
-    async function loadPurchases() {
-      setLoading(true);
-      
-      // Calcular rango de fechas según el filtro seleccionado
-      let dateStart: Date;
-      let dateEnd: Date = new Date();
+  // Función para cargar compras (reutilizable con useCallback)
+  const loadPurchases = useCallback(async () => {
+    setLoading(true);
+    
+    // Calcular rango de fechas según el filtro seleccionado
+    let dateStart: Date;
+    let dateEnd: Date = new Date();
+    dateEnd.setHours(23, 59, 59, 999);
+
+    if (dateRange === "custom") {
+      if (!startDate || !endDate) {
+        setLoading(false);
+        return;
+      }
+      dateStart = new Date(startDate);
+      dateStart.setHours(0, 0, 0, 0);
+      dateEnd = new Date(endDate);
       dateEnd.setHours(23, 59, 59, 999);
-
-      if (dateRange === "custom") {
-        if (!startDate || !endDate) {
-          setLoading(false);
-          return;
-        }
-        dateStart = new Date(startDate);
-        dateStart.setHours(0, 0, 0, 0);
-        dateEnd = new Date(endDate);
-        dateEnd.setHours(23, 59, 59, 999);
-      } else if (dateRange === "2days") {
-        dateStart = new Date();
-        dateStart.setDate(dateStart.getDate() - 2);
-        dateStart.setHours(0, 0, 0, 0);
-      } else if (dateRange === "week") {
-        dateStart = new Date();
-        dateStart.setDate(dateStart.getDate() - 7);
-        dateStart.setHours(0, 0, 0, 0);
-      } else if (dateRange === "15days") {
-        dateStart = new Date();
-        dateStart.setDate(dateStart.getDate() - 15);
-        dateStart.setHours(0, 0, 0, 0);
-      } else {
-        // month
-        dateStart = new Date();
-        dateStart.setMonth(dateStart.getMonth() - 1);
-        dateStart.setHours(0, 0, 0, 0);
-      }
-
-      // Construir query
-      let query = supabase
-        .from("orders")
-        .select(`
-          id,
-          created_at,
-          order_number,
-          replacement_cost,
-          device,
-          service_description,
-          supplier_id,
-          suppliers (
-            id,
-            name
-          )
-        `)
-        .gte("created_at", dateStart.toISOString())
-        .lte("created_at", dateEnd.toISOString())
-        .gt("replacement_cost", 0) // Solo órdenes con compras a proveedores
-        .not("supplier_id", "is", null) // Solo órdenes con proveedor asignado
-        .order("created_at", { ascending: false });
-
-      // Aplicar filtro de proveedor
-      if (selectedSupplier !== "all") {
-        query = query.eq("supplier_id", selectedSupplier);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error("Error loading purchases:", error);
-        setPurchases([]);
-      } else {
-        const purchasesData: PurchaseRecord[] = (data || []).map((order: any) => ({
-          id: order.id,
-          created_at: order.created_at,
-          order_number: order.order_number,
-          supplier_name: order.suppliers?.name || "Sin proveedor",
-          supplier_id: order.supplier_id,
-          replacement_cost: order.replacement_cost || 0,
-          device: order.device,
-          service_description: order.service_description,
-        }));
-        setPurchases(purchasesData);
-      }
-      setLoading(false);
+    } else if (dateRange === "2days") {
+      dateStart = new Date();
+      dateStart.setDate(dateStart.getDate() - 2);
+      dateStart.setHours(0, 0, 0, 0);
+    } else if (dateRange === "week") {
+      dateStart = new Date();
+      dateStart.setDate(dateStart.getDate() - 7);
+      dateStart.setHours(0, 0, 0, 0);
+    } else if (dateRange === "15days") {
+      dateStart = new Date();
+      dateStart.setDate(dateStart.getDate() - 15);
+      dateStart.setHours(0, 0, 0, 0);
+    } else {
+      // month
+      dateStart = new Date();
+      dateStart.setMonth(dateStart.getMonth() - 1);
+      dateStart.setHours(0, 0, 0, 0);
     }
 
-    loadPurchases();
+    // Construir query
+    // IMPORTANTE: Usar los mismos criterios que AdminDashboard
+    // Solo contar órdenes pagadas (status = 'paid'), excluyendo devueltas y canceladas
+    let query = supabase
+      .from("orders")
+      .select(`
+        id,
+        created_at,
+        order_number,
+        replacement_cost,
+        device,
+        service_description,
+        supplier_id,
+        status,
+        suppliers (
+          id,
+          name
+        )
+      `)
+      .gte("created_at", dateStart.toISOString())
+      .lte("created_at", dateEnd.toISOString())
+      .eq("status", "paid") // Solo órdenes pagadas (como en AdminDashboard)
+      .gt("replacement_cost", 0) // Solo órdenes con compras a proveedores
+      .not("supplier_id", "is", null) // Solo órdenes con proveedor asignado
+      .order("created_at", { ascending: false });
+
+    // Aplicar filtro de proveedor
+    if (selectedSupplier !== "all") {
+      query = query.eq("supplier_id", selectedSupplier);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error loading purchases:", error);
+      setPurchases([]);
+    } else {
+      const purchasesData: PurchaseRecord[] = (data || []).map((order: any) => ({
+        id: order.id,
+        created_at: order.created_at,
+        order_number: order.order_number,
+        supplier_name: order.suppliers?.name || "Sin proveedor",
+        supplier_id: order.supplier_id,
+        replacement_cost: order.replacement_cost || 0,
+        device: order.device,
+        service_description: order.service_description,
+      }));
+      setPurchases(purchasesData);
+    }
+    setLoading(false);
   }, [selectedSupplier, dateRange, startDate, endDate]);
+
+  useEffect(() => {
+    loadPurchases();
+  }, [loadPurchases]);
+
+  // Escuchar eventos de eliminación/actualización de órdenes
+  useEffect(() => {
+    window.addEventListener('orderDeleted', loadPurchases);
+    window.addEventListener('orderUpdated', loadPurchases);
+
+    return () => {
+      window.removeEventListener('orderDeleted', loadPurchases);
+      window.removeEventListener('orderUpdated', loadPurchases);
+    };
+  }, [loadPurchases]);
 
   const filteredPurchases = useMemo(() => {
     return purchases;

@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import type { Profile, SalaryAdjustment, Order } from "@/types";
 
-export default function TechnicianPayments() {
+interface TechnicianPaymentsProps {
+  refreshKey?: number;
+}
+
+export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPaymentsProps) {
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
   const [adjustments, setAdjustments] = useState<SalaryAdjustment[]>([]);
@@ -12,17 +16,41 @@ export default function TechnicianPayments() {
   const [weeklyAdjustmentTotals, setWeeklyAdjustmentTotals] = useState<Record<string, number>>({});
   const [weeklyReturnsTotals, setWeeklyReturnsTotals] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from("users")
-        .select("*")
-        .eq("role", "technician")
-        .order("name");
-      if (data) setTechnicians(data);
+  // Función para cargar técnicos (reutilizable con useCallback)
+  const loadTechnicians = useCallback(async () => {
+    const { data } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "technician")
+      .order("name");
+    if (data) {
+      setTechnicians(data);
+      // Limpiar la selección si el técnico seleccionado ya no existe
+      setSelectedTech((currentSelected) => {
+        if (currentSelected && !data.find((tech) => tech.id === currentSelected)) {
+          return null;
+        }
+        return currentSelected;
+      });
     }
-    load();
   }, []);
+
+  useEffect(() => {
+    loadTechnicians();
+  }, [refreshKey, loadTechnicians]);
+
+  // Escuchar eventos de actualización de usuarios
+  useEffect(() => {
+    window.addEventListener('userCreated', loadTechnicians);
+    window.addEventListener('userDeleted', loadTechnicians);
+    window.addEventListener('userUpdated', loadTechnicians);
+
+    return () => {
+      window.removeEventListener('userCreated', loadTechnicians);
+      window.removeEventListener('userDeleted', loadTechnicians);
+      window.removeEventListener('userUpdated', loadTechnicians);
+    };
+  }, [loadTechnicians]);
 
   useEffect(() => {
     async function loadWeeklyData() {

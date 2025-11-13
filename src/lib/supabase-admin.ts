@@ -12,11 +12,27 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const url = import.meta.env.PUBLIC_SUPABASE_URL as string;
-const serviceRoleKey = import.meta.env.PUBLIC_SUPABASE_SERVICE_ROLE_KEY as string;
+// Función helper para obtener variables de entorno de forma más robusta
+function getEnvVar(key: string): string | undefined {
+  // Intentar diferentes formas de acceder a la variable
+  const value = 
+    import.meta.env[key] ||
+    import.meta.env[`VITE_${key}`] ||
+    (typeof window !== 'undefined' && (window as any).__ENV__?.[key]) ||
+    undefined;
+  
+  // Limpiar espacios en blanco si existe
+  return value?.trim() || undefined;
+}
 
-// Solo crear el cliente admin si tenemos tanto la URL como el service_role key
-export const supabaseAdmin = (url && serviceRoleKey)
+const url = getEnvVar('PUBLIC_SUPABASE_URL') || '';
+const serviceRoleKey = getEnvVar('PUBLIC_SUPABASE_SERVICE_ROLE_KEY') || '';
+
+// Validación más estricta: la clave debe tener al menos 100 caracteres (las service_role keys son muy largas)
+const isValidServiceRoleKey = serviceRoleKey && serviceRoleKey.length >= 100 && serviceRoleKey.startsWith('eyJ');
+
+// Solo crear el cliente admin si tenemos tanto la URL como el service_role key válido
+export const supabaseAdmin = (url && isValidServiceRoleKey)
   ? createClient(url, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,

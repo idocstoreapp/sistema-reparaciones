@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import type { Order, Profile } from "@/types";
@@ -11,41 +11,69 @@ export default function AdminReports() {
   const [loading, setLoading] = useState(true);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadTechnicians() {
-      const { data } = await supabase
-        .from("users")
-        .select("*")
-        .eq("role", "technician")
-        .order("name");
-      if (data) setTechnicians(data);
-    }
-    loadTechnicians();
+  // Función para cargar técnicos (reutilizable)
+  const loadTechnicians = useCallback(async () => {
+    const { data } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "technician")
+      .order("name");
+    if (data) setTechnicians(data);
   }, []);
 
   useEffect(() => {
-    async function loadWeeklyReport() {
-      setLoading(true);
-      const { start, end } = currentWeekRange(weekStart);
+    loadTechnicians();
+  }, [loadTechnicians]);
 
-      let q = supabase
-        .from("orders")
-        .select("*, technician:users!technician_id(name)")
-        .eq("status", "paid") // Solo órdenes pagadas (con recibo), excluyendo devueltas y canceladas
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .order("created_at", { ascending: false });
+  // Escuchar eventos de actualización de usuarios
+  useEffect(() => {
+    window.addEventListener('userCreated', loadTechnicians);
+    window.addEventListener('userDeleted', loadTechnicians);
+    window.addEventListener('userUpdated', loadTechnicians);
 
-      if (selectedTechnician !== "all") {
-        q = q.eq("technician_id", selectedTechnician);
-      }
+    return () => {
+      window.removeEventListener('userCreated', loadTechnicians);
+      window.removeEventListener('userDeleted', loadTechnicians);
+      window.removeEventListener('userUpdated', loadTechnicians);
+    };
+  }, [loadTechnicians]);
 
-      const { data } = await q;
-      setWeeklyOrders((data as Order[]) ?? []);
-      setLoading(false);
+  // Función para cargar reporte semanal (reutilizable con useCallback)
+  const loadWeeklyReport = useCallback(async () => {
+    setLoading(true);
+    const { start, end } = currentWeekRange(weekStart);
+
+    let q = supabase
+      .from("orders")
+      .select("*, technician:users!technician_id(name)")
+      .eq("status", "paid") // Solo órdenes pagadas (con recibo), excluyendo devueltas y canceladas
+      .gte("created_at", start.toISOString())
+      .lte("created_at", end.toISOString())
+      .order("created_at", { ascending: false });
+
+    if (selectedTechnician !== "all") {
+      q = q.eq("technician_id", selectedTechnician);
     }
-    loadWeeklyReport();
+
+    const { data } = await q;
+    setWeeklyOrders((data as Order[]) ?? []);
+    setLoading(false);
   }, [weekStart, selectedTechnician]);
+
+  useEffect(() => {
+    loadWeeklyReport();
+  }, [loadWeeklyReport]);
+
+  // Escuchar eventos de eliminación/actualización de órdenes
+  useEffect(() => {
+    window.addEventListener('orderDeleted', loadWeeklyReport);
+    window.addEventListener('orderUpdated', loadWeeklyReport);
+
+    return () => {
+      window.removeEventListener('orderDeleted', loadWeeklyReport);
+      window.removeEventListener('orderUpdated', loadWeeklyReport);
+    };
+  }, [loadWeeklyReport]);
 
   const totalWeek = weeklyOrders.reduce(
     (s, o) => s + (o.commission_amount ?? 0),
@@ -75,22 +103,11 @@ export default function AdminReports() {
       if (error) {
         alert(`Error al eliminar la orden: ${error.message}`);
       } else {
-        // Recargar órdenes
-        const { start, end } = currentWeekRange(weekStart);
-        let q = supabase
-          .from("orders")
-          .select("*, technician:users!technician_id(name)")
-          .eq("status", "paid")
-          .gte("created_at", start.toISOString())
-          .lte("created_at", end.toISOString())
-          .order("created_at", { ascending: false });
-
-        if (selectedTechnician !== "all") {
-          q = q.eq("technician_id", selectedTechnician);
-        }
-
-        const { data } = await q;
-        setWeeklyOrders((data as Order[]) ?? []);
+        // Recargar órdenes usando la función existente
+        await loadWeeklyReport();
+        
+        // Disparar evento personalizado para notificar a otros componentes
+        window.dispatchEvent(new CustomEvent('orderDeleted'));
       }
     } catch (error) {
       console.error("Error deleting order:", error);
