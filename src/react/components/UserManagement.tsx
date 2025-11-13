@@ -111,7 +111,7 @@ export default function UserManagement() {
 
     try {
       if (!supabaseAdmin) {
-        throw new Error("Service role key no configurado");
+        throw new Error("⚠️ Service Role Key no configurado. Obtén el 'service_role' key en Supabase Dashboard → Settings → API. Luego: (1) Para desarrollo local: agrega PUBLIC_SUPABASE_SERVICE_ROLE_KEY=tu_key en .env.local y reinicia el servidor. (2) Para Vercel: agrega la variable en Vercel Dashboard → Settings → Environment Variables y haz redeploy.");
       }
 
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -141,6 +141,10 @@ export default function UserManagement() {
 
       if (userError) {
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        // Si el error es sobre columnas faltantes, dar instrucciones claras
+        if (userError.message?.includes("column") && userError.message?.includes("schema cache")) {
+          throw new Error("⚠️ Faltan columnas en la tabla 'users'. Ejecuta el script 'database/fix_users_table_columns.sql' en el SQL Editor de Supabase para agregar las columnas: last_name, document_number, local");
+        }
         throw userError;
       }
 
@@ -184,7 +188,13 @@ export default function UserManagement() {
         })
         .eq("id", editingUser.id);
 
-      if (error) throw error;
+      if (error) {
+        // Si el error es sobre columnas faltantes, dar instrucciones claras
+        if (error.message?.includes("column") && error.message?.includes("schema cache")) {
+          throw new Error("⚠️ Faltan columnas en la tabla 'users'. Ejecuta el script 'database/fix_users_table_columns.sql' en el SQL Editor de Supabase para agregar las columnas: last_name, document_number, local");
+        }
+        throw error;
+      }
 
       // Actualizar email en auth si cambió
       if (editFormData.email.trim() !== editingUser.email && supabaseAdmin) {
@@ -215,7 +225,7 @@ export default function UserManagement() {
 
     try {
       if (!supabaseAdmin) {
-        throw new Error("Service role key no configurado");
+        throw new Error("⚠️ Service Role Key no configurado. Obtén el 'service_role' key en Supabase Dashboard → Settings → API. Luego: (1) Para desarrollo local: agrega PUBLIC_SUPABASE_SERVICE_ROLE_KEY=tu_key en .env.local y reinicia el servidor. (2) Para Vercel: agrega la variable en Vercel Dashboard → Settings → Environment Variables y haz redeploy.");
       }
 
       const { error } = await supabaseAdmin.auth.admin.updateUserById(passwordUser.id, {
@@ -247,7 +257,7 @@ export default function UserManagement() {
 
     try {
       if (!supabaseAdmin) {
-        throw new Error("Service role key no configurado");
+        throw new Error("⚠️ Service Role Key no configurado. Obtén el 'service_role' key en Supabase Dashboard → Settings → API. Luego: (1) Para desarrollo local: agrega PUBLIC_SUPABASE_SERVICE_ROLE_KEY=tu_key en .env.local y reinicia el servidor. (2) Para Vercel: agrega la variable en Vercel Dashboard → Settings → Environment Variables y haz redeploy.");
       }
 
       // Eliminar de auth.users (esto también eliminará de users por CASCADE)

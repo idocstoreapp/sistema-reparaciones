@@ -24,12 +24,15 @@ Estas variables **DEBEN** estar configuradas para que la aplicación funcione:
 
 Estas variables son opcionales pero habilitan funcionalidades adicionales:
 
-### 3. `PUBLIC_SUPABASE_SERVICE_ROLE_KEY`
-- **Descripción**: Clave de servicio de Supabase (para crear usuarios desde el dashboard admin)
+### 3. `PUBLIC_SUPABASE_SERVICE_ROLE_KEY` ⚠️ REQUERIDA PARA GESTIÓN DE USUARIOS
+- **Descripción**: Clave de servicio de Supabase (para crear, editar y eliminar usuarios desde el dashboard admin)
 - **Dónde obtenerla**: Supabase Dashboard → Settings → API → service_role key
-- **⚠️ IMPORTANTE**: Esta clave tiene permisos completos. Solo úsala si necesitas la funcionalidad de crear usuarios desde el dashboard.
+- **⚠️ IMPORTANTE**: 
+  - Esta clave tiene permisos completos. Solo úsala si necesitas la funcionalidad de gestionar usuarios desde el dashboard.
+  - **DEBE estar configurada en Vercel** si tu aplicación está desplegada allí.
+  - Sin esta variable, los administradores NO podrán crear, editar o eliminar usuarios.
 - **Formato**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
-- **Nota**: En producción, considera usar Edge Functions en lugar de exponer esta clave en el frontend.
+- **Nota**: En producción, considera usar Edge Functions en lugar de exponer esta clave en el frontend, pero para la mayoría de casos, configurarla en Vercel es suficiente.
 
 ### 4. `PUBLIC_BSALE_ACCESS_TOKEN`
 - **Descripción**: Token de acceso para la API de Bsale (validación de boletas)
@@ -90,11 +93,13 @@ vercel env add PUBLIC_BSALE_API_URL production
 
 Antes de hacer deploy, verifica que tengas:
 
-- [ ] `PUBLIC_SUPABASE_URL` configurada
-- [ ] `PUBLIC_SUPABASE_ANON_KEY` configurada
-- [ ] `PUBLIC_SUPABASE_SERVICE_ROLE_KEY` configurada (si necesitas crear usuarios)
-- [ ] `PUBLIC_BSALE_ACCESS_TOKEN` configurada (si necesitas validar boletas)
-- [ ] `PUBLIC_BSALE_API_URL` configurada (solo si es diferente a la por defecto)
+- [ ] `PUBLIC_SUPABASE_URL` configurada (OBLIGATORIA)
+- [ ] `PUBLIC_SUPABASE_ANON_KEY` configurada (OBLIGATORIA)
+- [ ] `PUBLIC_SUPABASE_SERVICE_ROLE_KEY` configurada (OBLIGATORIA si necesitas gestionar usuarios - crear, editar, eliminar)
+- [ ] `PUBLIC_BSALE_ACCESS_TOKEN` configurada (opcional - solo si necesitas validar boletas)
+- [ ] `PUBLIC_BSALE_API_URL` configurada (opcional - solo si es diferente a la por defecto)
+
+**⚠️ Recordatorio:** Si agregas o modificas variables de entorno en Vercel, **debes hacer redeploy** para que los cambios surtan efecto.
 
 ---
 
