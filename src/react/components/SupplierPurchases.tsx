@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import type { Order, Supplier } from "@/types";
 
 interface PurchaseRecord {
@@ -242,9 +243,7 @@ export default function SupplierPurchases() {
           </div>
           <div className="text-right space-y-2">
             <div className="text-sm text-slate-600">Total gastado en el período:</div>
-            <div className="text-2xl font-bold text-brand">
-              ${totalSpent.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-            </div>
+            <div className="text-2xl font-bold text-brand">{formatCLP(totalSpent)}</div>
             <button
               type="button"
               onClick={() => setManageOpen((prev) => !prev)}
@@ -438,10 +437,7 @@ export default function SupplierPurchases() {
                     {purchase.service_description}
                   </td>
                   <td className="py-3 px-2 text-right font-semibold text-slate-900">
-                    ${purchase.replacement_cost.toLocaleString('es-CL', {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    })}
+                    {formatCLP(purchase.replacement_cost)}
                   </td>
                 </tr>
               ))}
@@ -452,10 +448,7 @@ export default function SupplierPurchases() {
                   Total:
                 </td>
                 <td className="py-3 px-2 text-right font-bold text-brand text-lg">
-                  ${totalSpent.toLocaleString('es-CL', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                  })}
+                  {formatCLP(totalSpent)}
                 </td>
               </tr>
             </tfoot>

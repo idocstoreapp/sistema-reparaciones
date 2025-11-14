@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { calcCommission } from "@/lib/commission";
+import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
 
@@ -18,6 +19,21 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   const [supplierId, setSupplierId] = useState<string>("");
   const [replacementCost, setReplacementCost] = useState(0);
   const [precioTotal, setPrecioTotal] = useState(0); // Precio total cobrado (ya incluye repuesto)
+  const handleReplacementCostChange = (value: string) => {
+    if (value.trim() === "") {
+      setReplacementCost(0);
+      return;
+    }
+    setReplacementCost(parseCLPInput(value));
+  };
+
+  const handlePrecioTotalChange = (value: string) => {
+    if (value.trim() === "") {
+      setPrecioTotal(0);
+      return;
+    }
+    setPrecioTotal(parseCLPInput(value));
+  };
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("");
   const [receiptNumber, setReceiptNumber] = useState("");
   const [initialNote, setInitialNote] = useState("");
@@ -214,15 +230,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Valor Repuesto ($)</label>
           <input
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="numeric"
             placeholder="0"
-            value={replacementCost || ""}
-            onChange={(e) => setReplacementCost(Number(e.target.value) || 0)}
+            value={formatCLPInput(replacementCost)}
+            onChange={(e) => handleReplacementCostChange(e.target.value)}
           />
           <p className="text-xs text-slate-500 mt-1">
-            Costo del repuesto (solo informativo - ya está incluido en el precio total)
+            Costo del repuesto en CLP (solo informativo - ya está incluido en el precio total)
           </p>
         </div>
         
@@ -230,12 +245,11 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Precio Total Cobrado ($) *</label>
           <input
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="numeric"
             placeholder="0"
-            value={precioTotal || ""}
-            onChange={(e) => setPrecioTotal(Number(e.target.value) || 0)}
+            value={formatCLPInput(precioTotal)}
+            onChange={(e) => handlePrecioTotalChange(e.target.value)}
             required
           />
           <p className="text-xs text-slate-500 mt-1">
@@ -374,7 +388,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       <div className="flex items-center justify-between pt-4 border-t border-slate-200">
         <div className="text-sm">
           <span className="text-slate-600">Ganancia calculada (40%): </span>
-          <span className="font-semibold text-brand">${commission.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+          <span className="font-semibold text-brand">{formatCLP(commission)}</span>
         </div>
         <button
           type="submit"

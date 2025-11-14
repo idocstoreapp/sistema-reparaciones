@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import type { Profile, SalaryAdjustment, Order, SalarySettlement } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
 
@@ -602,21 +603,17 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
             <div className="text-xs text-slate-500">
               <span className="mr-4">
                 Efectivo:{" "}
-                <span className="font-semibold text-emerald-600">
-                  ${historyAggregates.efectivo.toLocaleString("es-CL")}
-                </span>
+                <span className="font-semibold text-emerald-600">{formatCLP(historyAggregates.efectivo)}</span>
               </span>
               <span className="mr-4">
                 Transferencia:{" "}
                 <span className="font-semibold text-sky-600">
-                  ${historyAggregates.transferencia.toLocaleString("es-CL")}
+                  {formatCLP(historyAggregates.transferencia)}
                 </span>
               </span>
               <span>
                 Otro:{" "}
-                <span className="font-semibold text-slate-700">
-                  ${historyAggregates.otro.toLocaleString("es-CL")}
-                </span>
+                <span className="font-semibold text-slate-700">{formatCLP(historyAggregates.otro)}</span>
               </span>
             </div>
             {historyError && <p className="text-xs text-red-600">{historyError}</p>}
@@ -649,9 +646,7 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                             Semana {formatDate(entry.week_start)} • Medio: {paymentMethodLabel}
                           </p>
                         </div>
-                        <span className="font-semibold text-brand">
-                          ${entry.amount.toLocaleString("es-CL")}
-                        </span>
+                        <span className="font-semibold text-brand">{formatCLP(entry.amount)}</span>
                       </div>
                     </div>
                   );
@@ -700,21 +695,13 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                 <div>
                   <div className="font-medium text-slate-900">{tech.name}</div>
                   <div className="text-sm text-slate-600">
-                    Total semanal (con recibo): $
-                    {weeklyTotal.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    Total semanal (con recibo): {formatCLP(weeklyTotal)}
                     {returnsTotal > 0 && (
                       <span className="ml-2 text-xs text-red-600">
-                        (Devoluciones: -${returnsTotal.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                        (Devoluciones: -{formatCLP(returnsTotal)})
                       </span>
                     )}
-                    <span className="ml-2 text-xs text-slate-500">
-                      (Neto estimado: $
-                      {netTotal.toLocaleString('es-CL', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                      )
-                    </span>
+                    <span className="ml-2 text-xs text-slate-500">(Neto estimado: {formatCLP(netTotal, { withLabel: true })})</span>
                   </div>
                 </div>
                 <div className="text-2xl">{isSelected ? "▼" : "▶"}</div>
@@ -731,53 +718,25 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                   <div className="flex flex-col gap-2 text-sm text-slate-600 mb-3">
                     <div className="flex items-center justify-between">
                       <span>
-                        Total ajustes: $
-                        {adjustmentTotal.toLocaleString('es-CL', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        Total ajustes: {formatCLP(adjustmentTotal)}
                       </span>
                     </div>
                     {returnsTotal > 0 && (
                       <div className="flex items-center justify-between text-red-600">
-                        <span>
-                          Total devoluciones/cancelaciones: -$
-                          {returnsTotal.toLocaleString('es-CL', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
+                        <span>Total devoluciones/cancelaciones: -{formatCLP(returnsTotal)}</span>
                       </div>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">
-                        Saldo estimado: $
-                        {netTotal.toLocaleString('es-CL', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </span>
+                      <span className="text-xs text-slate-500">Saldo estimado: {formatCLP(netTotal)}</span>
                     </div>
                     {pendingDebt > 0 && (
                       <div className="flex items-center justify-between text-amber-600">
-                        <span>
-                          Pendiente próxima semana (el técnico debe): $
-                          {pendingDebt.toLocaleString('es-CL', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
+                        <span>Pendiente próxima semana (el técnico debe): {formatCLP(pendingDebt)}</span>
                       </div>
                     )}
                     {settlementTotal > 0 && (
                       <div className="flex items-center justify-between text-sky-600">
-                        <span>
-                          Liquidado: $
-                          {settlementTotal.toLocaleString('es-CL', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
+                        <span>Liquidado: {formatCLP(settlementTotal)}</span>
                       </div>
                     )}
                   </div>
@@ -817,7 +776,9 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                         onAfterSettlement={() => {
                           void loadWeeklyData();
                           void loadAdjustmentsForTech(tech.id, true);
-                          void loadSettlementHistory(tech.id, true);
+                          if (historyPanelOpen) {
+                            void fetchHistoryWithFilters(historyFilters);
+                          }
                         }}
                       />
                     </div>
@@ -884,9 +845,9 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
-                            <span className="font-semibold text-red-600">
-                              -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
-                            </span>
+                              <span className="font-semibold text-red-600">
+                                -{formatCLP(order.commission_amount ?? 0)}
+                              </span>
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -933,9 +894,7 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
-                          <span className="font-semibold">
-                            ${adj.amount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
+                            <span className="font-semibold">{formatCLP(adj.amount)}</span>
                             <button
                               type="button"
                               onClick={(e) => {

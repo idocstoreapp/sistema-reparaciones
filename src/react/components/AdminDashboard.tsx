@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentMonthRange, currentWeekRange } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import KpiCard from "./KpiCard";
 import OrdersTable from "./OrdersTable";
 import AdminReports from "./AdminReports";
@@ -83,17 +84,17 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Ganancia Total del Mes (Con Recibo)"
-          value={`$${kpis.monthGain.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          value={formatCLP(kpis.monthGain)}
           icon="💰"
         />
         <KpiCard
           title="Pagos Pendientes a Técnicos"
-          value={`$${kpis.pendingAll.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          value={formatCLP(kpis.pendingAll)}
           icon="⏳"
         />
         <KpiCard
           title="Total Compras a Proveedores"
-          value={`$${kpis.purchases.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          value={formatCLP(kpis.purchases)}
           icon="🛒"
         />
         <KpiCard

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import type { Order, Profile } from "@/types";
 
 export default function AdminReports() {
@@ -187,7 +188,7 @@ export default function AdminReports() {
                       <td className="py-2 px-2">{o.device}</td>
                       <td className="py-2 px-2">{o.payment_method || "-"}</td>
                       <td className="py-2 px-2">
-                        ${o.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                        {formatCLP(o.commission_amount || 0)}
                       </td>
                       <td className="py-2 px-2">
                         <span
@@ -216,7 +217,7 @@ export default function AdminReports() {
             </div>
             <div className="mt-4 text-right">
               <span className="font-semibold text-slate-700">
-                Total ganado esta semana: ${totalWeek.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                Total ganado esta semana: {formatCLP(totalWeek)}
               </span>
             </div>
           </>

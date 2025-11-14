@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
+import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import type { SalaryAdjustment, Order } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
 
@@ -22,6 +23,17 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
   const [adjustmentAmount, setAdjustmentAmount] = useState<number | "">("");
   const [adjustmentNote, setAdjustmentNote] = useState("");
   const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
+  const formattedAdjustmentAmount =
+    adjustmentAmount === "" ? "" : formatCLPInput(Number(adjustmentAmount));
+
+  const handleAdjustmentAmountChange = (raw: string) => {
+    if (raw.trim() === "") {
+      setAdjustmentAmount("");
+      return;
+    }
+    const parsed = parseCLPInput(raw);
+    setAdjustmentAmount(parsed);
+  };
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [settlingReturns, setSettlingReturns] = useState(false);
@@ -248,46 +260,28 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       <div className="space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Total ganado esta semana (con recibo):</span>
-          <span className="font-semibold text-emerald-600">
-            ${totalEarned.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </span>
+          <span className="font-semibold text-emerald-600">{formatCLP(totalEarned)}</span>
         </div>
 
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Ajustes registrados (descuentos / adelantos):</span>
-          <span className="font-semibold text-slate-600">
-            -$
-            {totalAdjustments.toLocaleString('es-CL', {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0,
-            })}
-          </span>
+          <span className="font-semibold text-slate-600">-{formatCLP(totalAdjustments)}</span>
         </div>
 
         {returnsDiscount > 0 && (
           <div className="flex justify-between items-center">
             <span className="text-slate-600">Descuento por devoluciones/cancelaciones:</span>
-            <span className="font-semibold text-red-600">
-              -$
-              {returnsDiscount.toLocaleString('es-CL', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
-            </span>
+            <span className="font-semibold text-red-600">-{formatCLP(returnsDiscount)}</span>
           </div>
         )}
 
         <div className="flex justify-between items-center">
           <span className="text-slate-600 font-medium">Total real disponible:</span>
-          <span className="font-semibold text-brand">
-            ${netAfterSettlements.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </span>
+          <span className="font-semibold text-brand">{formatCLP(netAfterSettlements)}</span>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Liquidado esta semana:</span>
-          <span className="font-semibold text-sky-600">
-            ${settledAmount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </span>
+          <span className="font-semibold text-sky-600">{formatCLP(settledAmount)}</span>
         </div>
             <SalarySettlementPanel
               technicianId={technicianId}
@@ -298,9 +292,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Total pendiente:</span>
-          <span className="font-semibold text-amber-600">
-            ${totalPending.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </span>
+          <span className="font-semibold text-amber-600">{formatCLP(totalPending)}</span>
         </div>
         
         {lastPayment && (
@@ -363,11 +355,8 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           <div>
             <h4 className="text-sm font-semibold text-slate-800">Ajustes de sueldo de la semana</h4>
             <p className="text-xs text-slate-500">
-              Descuentos, adelantos y devoluciones se restan del total ganado. Saldo disponible: $
-              {availableForAdvance.toLocaleString('es-CL', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
+              Descuentos, adelantos y devoluciones se restan del total ganado. Saldo disponible:{" "}
+              {formatCLP(availableForAdvance)}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 self-start sm:self-auto">
@@ -429,17 +418,15 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Monto</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="numeric"
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
-                  value={adjustmentAmount === "" ? "" : adjustmentAmount}
-                  onChange={(e) =>
-                    setAdjustmentAmount(e.target.value === "" ? "" : Number(e.target.value))
-                  }
-                  placeholder="Ej: 20000"
+                  value={formattedAdjustmentAmount}
+                  onChange={(e) => handleAdjustmentAmountChange(e.target.value)}
+                  placeholder="Ej: 20.000"
                   required
                 />
+                <p className="text-[10px] text-slate-400 mt-1">Valores en CLP.</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -511,7 +498,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-red-600">
-                        -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                        -{formatCLP(order.commission_amount ?? 0)}
                       </span>
                       <button
                         type="button"
@@ -548,9 +535,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                       <div className="text-xs text-slate-400">{dateTime}</div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold">
-                        ${adj.amount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </span>
+                      <span className="font-semibold">{formatCLP(adj.amount)}</span>
                       <button
                         type="button"
                         onClick={() => handleDeleteAdjustment(adj.id)}

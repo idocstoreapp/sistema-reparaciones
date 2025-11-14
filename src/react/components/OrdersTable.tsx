@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import type { Order, OrderNote, Profile } from "@/types";
 import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
@@ -736,9 +737,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           autoFocus
                         />
                       ) : (
-                        <span className="text-slate-700">
-                          ${(o.replacement_cost || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
+                        <span className="text-slate-700">{formatCLP(o.replacement_cost || 0)}</span>
                       )}
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
@@ -753,9 +752,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           placeholder="0"
                         />
                       ) : (
-                        <span className="text-slate-700">
-                          ${(o.repair_cost || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
+                        <span className="text-slate-700">{formatCLP(o.repair_cost || 0)}</span>
                       )}
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap">
@@ -807,9 +804,9 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       <span className="text-slate-400 text-xs">-</span>
                     )}
                   </td>
-                    <td className="py-2 px-2 font-semibold text-brand whitespace-nowrap text-xs">
-                      ${o.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
-                    </td>
+                  <td className="py-2 px-2 font-semibold text-brand whitespace-nowrap text-xs">
+                    {formatCLP(o.commission_amount || 0)}
+                  </td>
                     <td className="py-2 px-2 whitespace-nowrap">
                       <button
                         type="button"

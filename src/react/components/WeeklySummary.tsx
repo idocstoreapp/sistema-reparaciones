@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, currentMonthRange } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import KpiCard from "./KpiCard";
 
 interface WeeklySummaryProps {
@@ -147,22 +148,13 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
           <>
             <span>
               $
-              {kpis.weekGain.toLocaleString('es-CL', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
+              {formatCLP(kpis.weekGain)}
             </span>
             <span className="block text-sm font-normal text-slate-500 mt-1">
               Neto: $
-              {kpis.weekNet.toLocaleString('es-CL', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
+              {formatCLP(kpis.weekNet)}
               {" · Ajustes: -$"}
-              {kpis.weekAdjustments.toLocaleString('es-CL', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}
+              {formatCLP(kpis.weekAdjustments)}
             </span>
           </>
         }
@@ -170,12 +162,12 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       />
       <KpiCard
         title="Pendientes de Pago"
-        value={`$${kpis.pending.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+        value={formatCLP(kpis.pending)}
         icon="⏳"
       />
       <KpiCard
         title="Total del Mes (Con Recibo)"
-        value={`$${kpis.monthGain.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+        value={formatCLP(kpis.monthGain)}
         icon="📊"
       />
       <KpiCard

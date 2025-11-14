@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
+import { formatCLP } from "@/lib/currency";
 import type { SalaryAdjustment, SalaryAdjustmentApplication } from "@/types";
 
 interface SalarySettlementPanelProps {
@@ -265,10 +266,7 @@ export default function SalarySettlementPanel({
   }
 
   function formatAmount(amount: number) {
-    return amount.toLocaleString("es-CL", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
+    return formatCLP(amount);
   }
   const canEditAdjustments = context === "admin";
 
