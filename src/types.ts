@@ -49,5 +49,29 @@ export interface SalaryAdjustment {
   type: "advance" | "discount";
   amount: number;
   note?: string | null;
+  available_from?: string | null;
+}
+
+export interface SalaryAdjustmentApplication {
+  id: string;
+  adjustment_id: string;
+  technician_id: string;
+  applied_amount: number;
+  week_start: string;
+  created_at: string;
+  created_by?: string | null;
+}
+
+export interface SalarySettlement {
+  id: string;
+  technician_id: string;
+  week_start: string;
+  amount: number;
+  note?: string | null;
+  context?: "technician" | "admin";
+  payment_method?: "efectivo" | "transferencia" | "otro" | null;
+  details?: Record<string, any> | null;
+  created_by?: string | null;
+  created_at: string;
 }
 

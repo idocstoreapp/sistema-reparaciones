@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
-import type { Order, OrderNote } from "@/types";
+import type { Order, OrderNote, Profile } from "@/types";
 import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
@@ -13,12 +13,17 @@ interface OrdersTableProps {
   isAdmin?: boolean;
 }
 
+type LoadFilters = {
+  technicianId?: string;
+  technicianIds?: string[];
+};
+
 export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false }: OrdersTableProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<"all" | "paid" | "pending" | "returned" | "cancelled">("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "current_week">("all");
   const [orderSearch, setOrderSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isAdmin);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCostsId, setEditingCostsId] = useState<string | null>(null);
   const [editReceipt, setEditReceipt] = useState("");
@@ -35,20 +40,53 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [updatingCostsId, setUpdatingCostsId] = useState<string | null>(null);
+  const [technicianOptions, setTechnicianOptions] = useState<Profile[]>([]);
+  const [loadingTechnicians, setLoadingTechnicians] = useState(false);
+  const [selectedAdminTechnician, setSelectedAdminTechnician] = useState("");
+  const [selectedLocal, setSelectedLocal] = useState("");
+  const [hasAdminSearched, setHasAdminSearched] = useState(!isAdmin);
+  const [adminActiveFilters, setAdminActiveFilters] = useState<LoadFilters | null>(null);
+  const [adminError, setAdminError] = useState<string | null>(null);
 
-  async function load() {
+  const localOptions = useMemo(() => {
+    const locales = new Set<string>();
+    technicianOptions.forEach((tech) => {
+      if (tech.local) {
+        locales.add(tech.local);
+      }
+    });
+    return Array.from(locales).sort((a, b) => a.localeCompare(b));
+  }, [technicianOptions]);
+
+  const load = useCallback(async (filters?: LoadFilters) => {
+    if (isAdmin && !filters && !technicianId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
+
     let q = supabase
       .from("orders")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (technicianId) {
+    if (filters?.technicianId) {
+      q = q.eq("technician_id", filters.technicianId);
+    } else if (filters?.technicianIds) {
+      if (filters.technicianIds.length === 0) {
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
+      q = q.in("technician_id", filters.technicianIds);
+    } else if (technicianId) {
       q = q.eq("technician_id", technicianId);
     }
 
     const { data, error } = await q;
-    
+
     if (error) {
       console.error("Error loading orders:", error);
       setOrders([]);
@@ -56,11 +94,129 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       setOrders((data as Order[]) ?? []);
     }
     setLoading(false);
-  }
+  }, [technicianId, isAdmin]);
+
+  const refreshOrders = useCallback(() => {
+    if (isAdmin) {
+      if (adminActiveFilters) {
+        void load(adminActiveFilters);
+      }
+    } else {
+      void load();
+    }
+  }, [isAdmin, adminActiveFilters, load]);
+
+  const adminRefreshKeyRef = useRef(refreshKey);
 
   useEffect(() => {
-    load();
-  }, [technicianId, refreshKey]);
+    if (!isAdmin) {
+      void load();
+    }
+  }, [isAdmin, technicianId, refreshKey, load]);
+
+  useEffect(() => {
+    if (!isAdmin || !adminActiveFilters || !hasAdminSearched) {
+      adminRefreshKeyRef.current = refreshKey;
+      return;
+    }
+    if (adminRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+    adminRefreshKeyRef.current = refreshKey;
+    void load(adminActiveFilters);
+  }, [isAdmin, refreshKey, adminActiveFilters, hasAdminSearched, load]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setTechnicianOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchTechnicians() {
+      setLoadingTechnicians(true);
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, name, local")
+        .eq("role", "technician")
+        .order("name");
+
+      if (!cancelled) {
+        if (error) {
+          console.error("Error loading technicians for admin search:", error);
+          setTechnicianOptions([]);
+        } else {
+          setTechnicianOptions((data as Profile[]) ?? []);
+        }
+        setLoadingTechnicians(false);
+      }
+    }
+
+    void fetchTechnicians();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  async function handleAdminSearch() {
+    if (!isAdmin) {
+      return;
+    }
+    setAdminError(null);
+
+    if (!selectedLocal && !selectedAdminTechnician) {
+      setHasAdminSearched(true);
+      setAdminActiveFilters(null);
+      setOrders([]);
+      setAdminError("Selecciona un local o un técnico para iniciar la búsqueda.");
+      return;
+    }
+
+    let filters: LoadFilters | null = null;
+
+    if (selectedAdminTechnician) {
+      filters = { technicianId: selectedAdminTechnician };
+    } else if (selectedLocal) {
+      const techniciansForLocal = technicianOptions.filter(
+        (tech) => (tech.local || "") === selectedLocal
+      );
+
+      if (techniciansForLocal.length === 0) {
+        setHasAdminSearched(true);
+        setAdminActiveFilters(null);
+        setOrders([]);
+        setAdminError("No encontramos técnicos asociados a ese local.");
+        return;
+      }
+
+      filters = { technicianIds: techniciansForLocal.map((tech) => tech.id) };
+    }
+
+    if (!filters) {
+      setAdminError("Selecciona un local o un técnico válido.");
+      return;
+    }
+
+    setHasAdminSearched(true);
+    setAdminActiveFilters(filters);
+    await load(filters);
+  }
+
+  function handleAdminReset() {
+    setSelectedAdminTechnician("");
+    setSelectedLocal("");
+    setAdminActiveFilters(null);
+    setOrders([]);
+    setHasAdminSearched(false);
+    setAdminError(null);
+    setFilter("all");
+    setPeriodFilter("all");
+    setOrderSearch("");
+    if (isAdmin) {
+      setLoading(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     let weekStart: Date | null = null;
@@ -174,7 +330,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       setEditingId(null);
       setEditReceipt("");
       setEditPaymentMethod("");
-      load(); // Recargar órdenes
+      refreshOrders(); // Recargar órdenes
       if (onUpdate) onUpdate(); // Notificar al componente padre
       // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
       window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -225,7 +381,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         setEditingCostsId(null);
         setEditReplacementCost(0);
         setEditRepairCost(0);
-        load(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre para actualizar KPIs
         // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
         window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -339,7 +495,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       if (error) {
         alert(`Error al eliminar la orden: ${error.message}`);
       } else {
-        load(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
         // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
         window.dispatchEvent(new CustomEvent('orderDeleted'));
@@ -369,7 +525,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       if (error) {
         alert(`Error al actualizar el estado: ${error.message}`);
       } else {
-        load(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes
         if (onUpdate) onUpdate(); // Notificar al componente padre
         // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
         window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -382,6 +538,120 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     }
   }
 
+  const orderFiltersToolbar = (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 w-full">
+      <input
+        type="text"
+        className="flex-1 min-w-0 sm:min-w-[180px] border border-slate-300 rounded-md px-3 py-2 text-sm"
+        placeholder="Buscar por N° de orden..."
+        value={orderSearch}
+        onChange={(e) => setOrderSearch(e.target.value)}
+      />
+      <select
+        className="w-full sm:w-auto sm:min-w-[160px] border border-slate-300 rounded-md px-3 py-2 text-sm"
+        value={periodFilter}
+        onChange={(e) => setPeriodFilter(e.target.value as "all" | "current_week")}
+      >
+        <option value="all">Todas las semanas</option>
+        <option value="current_week">Semana actual (L-V)</option>
+      </select>
+      <select
+        className="w-full sm:w-auto sm:min-w-[140px] border border-slate-300 rounded-md px-3 py-2 text-sm"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value as any)}
+      >
+        <option value="all">Todos los estados</option>
+        <option value="paid">Con recibo (Pagadas)</option>
+        <option value="pending">Pendientes</option>
+        <option value="returned">Devueltas</option>
+        <option value="cancelled">Canceladas</option>
+      </select>
+    </div>
+  );
+
+  const adminSearchToolbar = isAdmin ? (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Buscar por local
+          </label>
+          <select
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+            value={selectedLocal}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSelectedLocal(value);
+              setAdminError(null);
+              if (value) {
+                setSelectedAdminTechnician("");
+              }
+            }}
+            disabled={loadingTechnicians || loading}
+          >
+            <option value="">{loadingTechnicians ? "Cargando locales..." : "Selecciona un local"}</option>
+            {localOptions.map((local) => (
+              <option key={local} value={local}>
+                {local}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Buscar por técnico
+          </label>
+          <select
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+            value={selectedAdminTechnician}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSelectedAdminTechnician(value);
+              setAdminError(null);
+              if (value) {
+                setSelectedLocal("");
+              }
+            }}
+            disabled={loadingTechnicians || loading}
+          >
+            <option value="">{loadingTechnicians ? "Cargando técnicos..." : "Selecciona un técnico"}</option>
+            {technicianOptions.map((tech) => (
+              <option key={tech.id} value={tech.id}>
+                {tech.name} {tech.local ? `• ${tech.local}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="text-xs text-slate-500">
+          Selecciona un local o técnico para listar solo las órdenes asociadas.
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void handleAdminSearch()}
+          disabled={
+            loading ||
+            (!selectedLocal && !selectedAdminTechnician) ||
+            loadingTechnicians
+          }
+          className="px-4 py-2 text-xs font-semibold rounded-md text-white bg-brand-light hover:bg-white hover:text-brand border border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Buscar
+        </button>
+        <button
+          type="button"
+          onClick={handleAdminReset}
+          disabled={loading}
+          className="px-4 py-2 text-xs border border-slate-300 rounded-md hover:bg-slate-100 transition disabled:opacity-50"
+        >
+          Limpiar
+        </button>
+      </div>
+      {adminError && <p className="text-xs text-red-600">{adminError}</p>}
+    </div>
+  ) : null;
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -392,40 +662,33 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-slate-900 mb-3">Órdenes de Reparación</h3>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 w-full">
-          <input
-            type="text"
-            className="flex-1 min-w-0 sm:min-w-[180px] border border-slate-300 rounded-md px-3 py-2 text-sm"
-            placeholder="Buscar por N° de orden..."
-            value={orderSearch}
-            onChange={(e) => setOrderSearch(e.target.value)}
-          />
-          <select
-            className="w-full sm:w-auto sm:min-w-[160px] border border-slate-300 rounded-md px-3 py-2 text-sm"
-            value={periodFilter}
-            onChange={(e) => setPeriodFilter(e.target.value as "all" | "current_week")}
-          >
-            <option value="all">Todas las semanas</option>
-            <option value="current_week">Semana actual (L-V)</option>
-          </select>
-          <select
-            className="w-full sm:w-auto sm:min-w-[140px] border border-slate-300 rounded-md px-3 py-2 text-sm"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as any)}
-          >
-            <option value="all">Todos los estados</option>
-            <option value="paid">Con recibo (Pagadas)</option>
-            <option value="pending">Pendientes</option>
-            <option value="returned">Devueltas</option>
-            <option value="cancelled">Canceladas</option>
-          </select>
+      <div className="mb-4 space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Órdenes de Reparación</h3>
+          <p className="text-xs text-slate-500">
+            {isAdmin
+              ? "Busca órdenes específicas por local o técnico antes de filtrarlas."
+              : "Consulta y gestiona todas tus órdenes de la semana."}
+          </p>
         </div>
+        {isAdmin ? (
+          <>
+            {adminSearchToolbar}
+            {hasAdminSearched && orderFiltersToolbar}
+          </>
+        ) : (
+          orderFiltersToolbar
+        )}
       </div>
       
-      {filtered.length === 0 ? (
-        <div className="text-center text-slate-500 py-8">No hay órdenes registradas</div>
+      {isAdmin && !hasAdminSearched ? (
+        <div className="text-center text-slate-500 py-8">
+          Usa el buscador para ver las órdenes por local o técnico.
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center text-slate-500 py-8">
+          {isAdmin ? "No se encontraron órdenes con los filtros seleccionados." : "No hay órdenes registradas"}
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full align-middle">

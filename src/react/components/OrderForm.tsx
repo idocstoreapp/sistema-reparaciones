@@ -11,7 +11,7 @@ interface OrderFormProps {
 
 export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   const today = new Date().toISOString().slice(0, 10);
-  
+  const [orderDate, setOrderDate] = useState(today);
   const [orderNumber, setOrderNumber] = useState("");
   const [device, setDevice] = useState("");
   const [service, setService] = useState("");
@@ -23,14 +23,59 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   const [initialNote, setInitialNote] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierContact, setNewSupplierContact] = useState("");
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [supplierError, setSupplierError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSuppliers() {
-      const { data } = await supabase.from("suppliers").select("*").order("name");
+      const { data, error } = await supabase.from("suppliers").select("*").order("name");
+      if (error) {
+        console.error("Error cargando proveedores:", error);
+        setSupplierError("No pudimos cargar los proveedores. Intenta nuevamente.");
+        return;
+      }
       if (data) setSuppliers(data);
     }
     loadSuppliers();
   }, []);
+
+  async function handleQuickCreateSupplier(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSupplierName.trim()) {
+      setSupplierError("Ingresa un nombre de proveedor.");
+      return;
+    }
+    setSupplierError(null);
+    setCreatingSupplier(true);
+    const { data, error } = await supabase
+      .from("suppliers")
+      .insert({
+        name: newSupplierName.trim(),
+        contact_info: newSupplierContact.trim() ? newSupplierContact.trim() : null,
+      })
+      .select()
+      .maybeSingle();
+    setCreatingSupplier(false);
+    if (error) {
+      console.error("Error creando proveedor:", error);
+      setSupplierError("No pudimos crear el proveedor. Intenta nuevamente.");
+      return;
+    }
+    if (data) {
+      setSuppliers((prev) =>
+        [...prev, data].sort((a, b) => a.name.localeCompare(b.name, "es"))
+      );
+      setSupplierId(data.id);
+      setNewSupplierName("");
+      setNewSupplierContact("");
+      setSupplierFormOpen(false);
+      setSupplierError(null);
+      window.dispatchEvent(new CustomEvent("supplierCreated"));
+    }
+  }
 
   const commission = useMemo(
     () =>
@@ -52,6 +97,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     setLoading(true);
     const status = receiptNumber.trim() ? "paid" : "pending";
     
+    if (!orderDate) {
+      alert("Selecciona una fecha válida para la orden.");
+      return;
+    }
+
+    const createdAt = new Date(orderDate);
+    createdAt.setHours(12, 0, 0, 0); // evitar desfases por zona horaria
+
     const { data: createdOrder, error } = await supabase
       .from("orders")
       .insert({
@@ -66,6 +119,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         receipt_number: receiptNumber.trim() || null,
         status,
         commission_amount: commission,
+        created_at: createdAt.toISOString(),
       })
       .select()
       .maybeSingle();
@@ -90,6 +144,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
 
       onSaved();
       // Reset form
+      setOrderDate(today);
       setOrderNumber("");
       setDevice("");
       setService("");
@@ -108,13 +163,18 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Fecha</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Fecha *</label>
           <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-50"
+            className="w-full border border-slate-300 rounded-md px-3 py-2"
             type="date"
-            value={today}
-            readOnly
+            max={today}
+            value={orderDate}
+            onChange={(e) => setOrderDate(e.target.value)}
+            required
           />
+          <p className="text-xs text-slate-500 mt-1">
+            Puedes ajustar la fecha si estás registrando una orden atrasada.
+          </p>
         </div>
         
         <div>
@@ -205,7 +265,16 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Proveedor</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-slate-700">Proveedor</label>
+            <button
+              type="button"
+              onClick={() => setSupplierFormOpen((prev) => !prev)}
+              className="text-xs text-brand hover:text-brand-dark"
+            >
+              {supplierFormOpen ? "Cancelar" : "Agregar proveedor"}
+            </button>
+          </div>
           <select
             className="w-full border border-slate-300 rounded-md px-3 py-2"
             value={supplierId}
@@ -218,6 +287,61 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
               </option>
             ))}
           </select>
+          {supplierFormOpen && (
+            <form
+              onSubmit={handleQuickCreateSupplier}
+              className="mt-3 space-y-2 border border-slate-200 rounded-md p-3 bg-slate-50"
+            >
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Nombre del proveedor *
+                </label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="Ej: Repuestos Rápidos"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Contacto (opcional)
+                </label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+                  value={newSupplierContact}
+                  onChange={(e) => setNewSupplierContact(e.target.value)}
+                  placeholder="Teléfono, Instagram, etc."
+                />
+              </div>
+              {supplierError && (
+                <p className="text-xs text-red-600">{supplierError}</p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={creatingSupplier}
+                  className="px-3 py-1 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {creatingSupplier ? "Guardando..." : "Guardar y usar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupplierFormOpen(false);
+                    setSupplierError(null);
+                  }}
+                  className="px-3 py-1 text-xs font-semibold rounded-md border border-slate-300 text-slate-600 hover:bg-white"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </form>
+          )}
+          {!supplierFormOpen && supplierError && (
+            <p className="text-xs text-red-600 mt-1">{supplierError}</p>
+          )}
         </div>
         
         <div>

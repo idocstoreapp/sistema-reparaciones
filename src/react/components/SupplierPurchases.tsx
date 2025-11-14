@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/date";
+import { formatDate, currentWeekRange } from "@/lib/date";
 import type { Order, Supplier } from "@/types";
 
 interface PurchaseRecord {
@@ -17,9 +17,7 @@ interface PurchaseRecord {
 export default function SupplierPurchases() {
   // Inicializar fechas por defecto (último mes) desde el inicio
   const getDefaultDates = () => {
-    const end = new Date();
-    const start = new Date();
-    start.setMonth(start.getMonth() - 1);
+    const { start, end } = currentWeekRange();
     return {
       start: start.toISOString().slice(0, 10),
       end: end.toISOString().slice(0, 10),
@@ -31,19 +29,30 @@ export default function SupplierPurchases() {
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierContact, setNewSupplierContact] = useState("");
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [deletingSupplierId, setDeletingSupplierId] = useState<string | null>(null);
+  const [supplierError, setSupplierError] = useState<string | null>(null);
   
   // Filtros
   const [selectedSupplier, setSelectedSupplier] = useState<string>("all");
-  const [dateRange, setDateRange] = useState<"custom" | "2days" | "week" | "15days" | "month">("month");
+  const [dateRange, setDateRange] = useState<"custom" | "week">("week");
   const [startDate, setStartDate] = useState<string>(defaultDates.start);
   const [endDate, setEndDate] = useState<string>(defaultDates.end);
 
   useEffect(() => {
     async function loadSuppliers() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("suppliers")
         .select("*")
         .order("name");
+      if (error) {
+        console.error("Error cargando proveedores:", error);
+        setSupplierError("No pudimos cargar los proveedores. Intenta nuevamente.");
+        return;
+      }
       if (data) setSuppliers(data);
     }
     loadSuppliers();
@@ -67,22 +76,10 @@ export default function SupplierPurchases() {
       dateStart.setHours(0, 0, 0, 0);
       dateEnd = new Date(endDate);
       dateEnd.setHours(23, 59, 59, 999);
-    } else if (dateRange === "2days") {
-      dateStart = new Date();
-      dateStart.setDate(dateStart.getDate() - 2);
-      dateStart.setHours(0, 0, 0, 0);
-    } else if (dateRange === "week") {
+    } else {
+      // week (por defecto)
       dateStart = new Date();
       dateStart.setDate(dateStart.getDate() - 7);
-      dateStart.setHours(0, 0, 0, 0);
-    } else if (dateRange === "15days") {
-      dateStart = new Date();
-      dateStart.setDate(dateStart.getDate() - 15);
-      dateStart.setHours(0, 0, 0, 0);
-    } else {
-      // month
-      dateStart = new Date();
-      dateStart.setMonth(dateStart.getMonth() - 1);
       dateStart.setHours(0, 0, 0, 0);
     }
 
@@ -161,6 +158,56 @@ export default function SupplierPurchases() {
     return filteredPurchases.reduce((sum, p) => sum + (p.replacement_cost || 0), 0);
   }, [filteredPurchases]);
 
+  async function handleCreateSupplier(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSupplierName.trim()) {
+      setSupplierError("Escribe un nombre antes de guardar.");
+      return;
+    }
+    setSupplierError(null);
+    setCreatingSupplier(true);
+    const { data, error } = await supabase
+      .from("suppliers")
+      .insert({
+        name: newSupplierName.trim(),
+        contact_info: newSupplierContact.trim() ? newSupplierContact.trim() : null,
+      })
+      .select()
+      .maybeSingle();
+    setCreatingSupplier(false);
+    if (error) {
+      console.error("Error creando proveedor:", error);
+      setSupplierError("No pudimos crear el proveedor. Intenta nuevamente.");
+      return;
+    }
+    if (data) {
+      setSuppliers((prev) =>
+        [...prev, data].sort((a, b) => a.name.localeCompare(b.name, "es"))
+      );
+      setNewSupplierName("");
+      setNewSupplierContact("");
+      window.dispatchEvent(new CustomEvent("supplierCreated"));
+    }
+  }
+
+  async function handleDeleteSupplier(id: string) {
+    const confirmDelete = window.confirm(
+      "¿Eliminar este proveedor? Las órdenes existentes conservarán el histórico."
+    );
+    if (!confirmDelete) return;
+    setDeletingSupplierId(id);
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
+    setDeletingSupplierId(null);
+    if (error) {
+      console.error("Error eliminando proveedor:", error);
+      setSupplierError("No pudimos eliminar el proveedor. Intenta nuevamente.");
+      return;
+    }
+    setSuppliers((prev) => prev.filter((s) => s.id !== id));
+    window.dispatchEvent(new CustomEvent("supplierDeleted"));
+    loadPurchases();
+  }
+
   const handleDateRangeChange = (range: "custom" | "2days" | "week" | "15days" | "month") => {
     setDateRange(range);
     
@@ -193,13 +240,93 @@ export default function SupplierPurchases() {
               Reporte detallado de repuestos comprados y gastos por proveedor
             </p>
           </div>
-          <div className="text-right">
+          <div className="text-right space-y-2">
             <div className="text-sm text-slate-600">Total gastado en el período:</div>
             <div className="text-2xl font-bold text-brand">
               ${totalSpent.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </div>
+            <button
+              type="button"
+              onClick={() => setManageOpen((prev) => !prev)}
+              className="text-xs px-3 py-1 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-100"
+            >
+              {manageOpen ? "Ocultar gestión de proveedores" : "Gestionar proveedores"}
+            </button>
           </div>
         </div>
+
+        {manageOpen && (
+          <div className="border border-slate-200 rounded-md p-4 bg-slate-50 space-y-4">
+            <h4 className="text-sm font-semibold text-slate-800">Nuevo proveedor</h4>
+            <form onSubmit={handleCreateSupplier} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                type="text"
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+                placeholder="Nombre"
+                value={newSupplierName}
+                onChange={(e) => setNewSupplierName(e.target.value)}
+              />
+              <input
+                type="text"
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+                placeholder="Contacto (opcional)"
+                value={newSupplierContact}
+                onChange={(e) => setNewSupplierContact(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={creatingSupplier}
+                  className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm font-semibold hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {creatingSupplier ? "Guardando..." : "Guardar proveedor"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewSupplierName("");
+                    setNewSupplierContact("");
+                    setSupplierError(null);
+                  }}
+                  className="px-3 py-2 text-sm border border-slate-300 rounded-md text-slate-600 hover:bg-white"
+                >
+                  Limpiar
+                </button>
+              </div>
+            </form>
+            {supplierError && <p className="text-xs text-red-600">{supplierError}</p>}
+            <div>
+              <h4 className="text-sm font-semibold text-slate-800 mb-2">Listado</h4>
+              {suppliers.length === 0 ? (
+                <p className="text-xs text-slate-500">Aún no hay proveedores registrados.</p>
+              ) : (
+                <div className="max-h-64 overflow-y-auto border border-dashed border-slate-200 rounded-md">
+                  {suppliers.map((supplier) => (
+                    <div
+                      key={supplier.id}
+                      className="flex items-center justify-between px-3 py-2 border-b border-slate-100 last:border-0 bg-white"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{supplier.name}</p>
+                        {supplier.contact_info && (
+                          <p className="text-xs text-slate-500">{supplier.contact_info}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSupplier(supplier.id)}
+                        disabled={deletingSupplierId === supplier.id}
+                        className="text-xs text-red-600 hover:text-red-500 disabled:opacity-50"
+                      >
+                        {deletingSupplierId === supplier.id ? "Eliminando..." : "Eliminar"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Filtro de Proveedor */}
@@ -231,10 +358,7 @@ export default function SupplierPurchases() {
               value={dateRange}
               onChange={(e) => handleDateRangeChange(e.target.value as any)}
             >
-              <option value="2days">Últimos 2 días</option>
-              <option value="week">Última semana</option>
-              <option value="15days">Últimos 15 días</option>
-              <option value="month">Último mes</option>
+              <option value="week">Semana actual</option>
               <option value="custom">Rango personalizado</option>
             </select>
           </div>

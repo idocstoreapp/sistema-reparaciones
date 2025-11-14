@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentMonthRange } from "@/lib/date";
+import { currentMonthRange, currentWeekRange } from "@/lib/date";
 import KpiCard from "./KpiCard";
 import OrdersTable from "./OrdersTable";
 import AdminReports from "./AdminReports";
@@ -26,14 +26,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { start, end } = currentMonthRange();
+      const { start: monthStart, end: monthEnd } = currentMonthRange();
+      const { start: weekStart, end: weekEnd } = currentWeekRange();
 
       // Cargar todas las órdenes del mes
       const { data: allOrders } = await supabase
         .from("orders")
         .select("*")
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+        .gte("created_at", monthStart.toISOString())
+        .lte("created_at", monthEnd.toISOString());
 
       if (allOrders) {
         // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas
@@ -45,10 +46,15 @@ export default function AdminDashboard() {
         const pendingAll = allOrders
           .filter((r) => r.status === "pending")
           .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
-        // Compras solo de órdenes pagadas con replacement_cost > 0 y supplier_id no null
-        // (excluyendo devueltas y canceladas, mismo criterio que SupplierPurchases)
+        // Compras de la semana actual (pagadas, con proveedor)
         const purchases = paidOrders
-          .filter((r) => (r.replacement_cost ?? 0) > 0 && r.supplier_id)
+          .filter(
+            (r) =>
+              (r.replacement_cost ?? 0) > 0 &&
+              r.supplier_id &&
+              new Date(r.created_at) >= weekStart &&
+              new Date(r.created_at) <= weekEnd
+          )
           .reduce((s, r) => s + (r.replacement_cost ?? 0), 0);
 
         setKpis({

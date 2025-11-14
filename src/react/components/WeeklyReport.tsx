@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
-import type { SalaryAdjustment } from "@/types";
+import type { SalaryAdjustment, Order } from "@/types";
+import SalarySettlementPanel from "./SalarySettlementPanel";
 
 interface WeeklyReportProps {
   technicianId: string;
@@ -13,7 +14,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
   const [totalPending, setTotalPending] = useState(0);
   const [lastPayment, setLastPayment] = useState<string | null>(null);
   const [returnsDiscount, setReturnsDiscount] = useState(0);
-  const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
+  const [returnedOrders, setReturnedOrders] = useState<Order[]>([]);
   const [adjustments, setAdjustments] = useState<SalaryAdjustment[]>([]);
   const [loadingAdjustments, setLoadingAdjustments] = useState(false);
   const [adjustmentFormOpen, setAdjustmentFormOpen] = useState(false);
@@ -22,15 +23,22 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
   const [adjustmentNote, setAdjustmentNote] = useState("");
   const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
+  const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
+  const [settlingReturns, setSettlingReturns] = useState(false);
+  const [deletingReturnId, setDeletingReturnId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settlementPanelOpen, setSettlementPanelOpen] = useState(true);
+  const [settledAmount, setSettledAmount] = useState(0);
 
   const loadData = useCallback(async () => {
       setLoading(true);
     setLoadingAdjustments(true);
     try {
       const { start, end } = currentWeekRange();
+      const weekStartISO = start.toISOString().slice(0, 10);
 
-      const [{ data: orders }, { data: adjustmentData }] = await Promise.all([
+      const [{ data: orders }, { data: adjustmentData }, { data: settlementsData }] = await Promise.all([
         supabase
         .from("orders")
         .select("*")
@@ -45,6 +53,11 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           .gte("created_at", start.toISOString())
           .lte("created_at", end.toISOString())
           .order("created_at", { ascending: false }),
+        supabase
+          .from("salary_settlements")
+          .select("amount")
+          .eq("technician_id", technicianId)
+          .eq("week_start", weekStartISO),
       ]);
 
       if (orders) {
@@ -76,6 +89,9 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       setAdjustments(((adjustmentData as SalaryAdjustment[]) ?? []).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
+      setSettledAmount(
+        (settlementsData as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
+      );
     } finally {
       setLoading(false);
       setLoadingAdjustments(false);
@@ -91,8 +107,10 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
     [adjustments]
   );
 
-  const netEarned = Math.max(totalEarned - totalAdjustments - returnsDiscount, 0);
-  const availableForAdvance = Math.max(netEarned, 0);
+  const netEarned = totalEarned - totalAdjustments - returnsDiscount;
+  const netAfterSettlements = netEarned - settledAmount;
+  const availableForAdvance = Math.max(netAfterSettlements, 0);
+  const baseAmountForSettlement = Math.max(totalEarned - returnsDiscount, 0);
 
   if (loading) {
     return (
@@ -119,11 +137,6 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
 
     const cleanNote = adjustmentNote.trim() || null;
 
-    if (adjustmentType === "advance" && amountNumber > availableForAdvance) {
-      setAdjustmentError("El adelanto no puede superar el saldo disponible.");
-      return;
-    }
-
     setSavingAdjustment(true);
 
     const { error } = await supabase.from("salary_adjustments").insert({
@@ -146,6 +159,86 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
     setAdjustmentType("advance");
     setAdjustmentFormOpen(false);
     void loadData();
+  }
+
+  async function handleDeleteAdjustment(adjustmentId: string) {
+    const target = adjustments.find((adj) => adj.id === adjustmentId);
+    if (!target) {
+      return;
+    }
+    const confirmed = window.confirm("¿Eliminar este ajuste de sueldo?");
+    if (!confirmed) {
+      return;
+    }
+    setActionError(null);
+    setDeletingAdjustmentId(adjustmentId);
+    const { error } = await supabase
+      .from("salary_adjustments")
+      .delete()
+      .eq("id", adjustmentId)
+      .eq("technician_id", technicianId);
+    setDeletingAdjustmentId(null);
+    if (error) {
+      console.error("Error eliminando ajuste:", error);
+      setActionError("No pudimos eliminar el ajuste. Intenta nuevamente.");
+      return;
+    }
+    setAdjustments((prev) => prev.filter((adj) => adj.id !== adjustmentId));
+  }
+
+  async function handleDeleteReturn(orderId: string) {
+    const target = returnedOrders.find((order) => order.id === orderId);
+    if (!target) {
+      return;
+    }
+    const confirmed = window.confirm("¿Eliminar esta devolución/cancelación del historial?");
+    if (!confirmed) {
+      return;
+    }
+    setActionError(null);
+    setDeletingReturnId(orderId);
+    const { error } = await supabase
+      .from("orders")
+      .delete()
+      .eq("id", orderId)
+      .eq("technician_id", technicianId)
+      .in("status", ["returned", "cancelled"]);
+    setDeletingReturnId(null);
+    if (error) {
+      console.error("Error eliminando devolución:", error);
+      setActionError("No pudimos eliminar la devolución. Intenta nuevamente.");
+      return;
+    }
+    setReturnedOrders((prev) => prev.filter((order) => order.id !== orderId));
+    setReturnsDiscount((prev) => Math.max(prev - (target.commission_amount ?? 0), 0));
+  }
+
+  async function handleSettleAllReturns() {
+    if (returnedOrders.length === 0) {
+      return;
+    }
+    const confirmed = window.confirm("¿Seguro que quieres eliminar todas tus devoluciones/cancelaciones de esta semana?");
+    if (!confirmed) {
+      return;
+    }
+    setActionError(null);
+    setSettlingReturns(true);
+    const { start, end } = currentWeekRange();
+    const { error } = await supabase
+      .from("orders")
+      .delete()
+      .eq("technician_id", technicianId)
+      .in("status", ["returned", "cancelled"])
+      .gte("created_at", start.toISOString())
+      .lte("created_at", end.toISOString());
+    setSettlingReturns(false);
+    if (error) {
+      console.error("Error al eliminar devoluciones:", error);
+      setActionError("No pudimos eliminar las devoluciones. Intenta nuevamente.");
+      return;
+    }
+    setReturnedOrders([]);
+    setReturnsDiscount(0);
   }
 
   return (
@@ -187,9 +280,21 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         <div className="flex justify-between items-center">
           <span className="text-slate-600 font-medium">Total real disponible:</span>
           <span className="font-semibold text-brand">
-            ${netEarned.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            ${netAfterSettlements.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </span>
         </div>
+        <div className="flex justify-between items-center">
+          <span className="text-slate-600">Liquidado esta semana:</span>
+          <span className="font-semibold text-sky-600">
+            ${settledAmount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+            <SalarySettlementPanel
+              technicianId={technicianId}
+              baseAmount={baseAmountForSettlement}
+              context="technician"
+              onAfterSettlement={() => void loadData()}
+            />
         
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Total pendiente:</span>
@@ -265,17 +370,47 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
               })}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setAdjustmentFormOpen((prev) => !prev);
-              setAdjustmentError(null);
-            }}
-            className="self-start sm:self-auto px-3 py-2 text-xs font-medium border border-slate-300 rounded-md hover:bg-slate-100 transition"
-          >
-            {adjustmentFormOpen ? "Cerrar formulario" : "Registrar ajuste"}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 self-start sm:self-auto">
+            {returnedOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSettleAllReturns}
+                disabled={settlingReturns}
+                className="px-3 py-2 text-xs font-medium border border-amber-500 text-amber-600 rounded-md hover:bg-amber-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {settlingReturns ? "Eliminando devoluciones..." : "Eliminar devoluciones"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSettlementPanelOpen((prev) => !prev)}
+              className="px-3 py-2 text-xs font-medium border border-brand-light text-brand rounded-md hover:bg-brand/5 transition"
+            >
+              {settlementPanelOpen ? "Ocultar liquidación" : "Liquidar sueldo"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdjustmentFormOpen((prev) => !prev);
+                setAdjustmentError(null);
+              }}
+              className="px-3 py-2 text-xs font-medium border border-slate-300 rounded-md hover:bg-slate-100 transition"
+            >
+              {adjustmentFormOpen ? "Cerrar formulario" : "Registrar ajuste"}
+            </button>
+          </div>
         </div>
+
+        {settlementPanelOpen && (
+          <div className="mb-5">
+            <SalarySettlementPanel
+              technicianId={technicianId}
+              baseAmount={baseAmountForSettlement}
+              context="technician"
+              onAfterSettlement={() => void loadData()}
+            />
+          </div>
+        )}
 
         {adjustmentFormOpen && (
           <form onSubmit={handleSaveAdjustment} className="bg-slate-50 border border-slate-200 rounded-md p-4 space-y-3 mb-5">
@@ -347,6 +482,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         )}
 
         <div className="space-y-3">
+          {actionError && <div className="text-xs text-red-600">{actionError}</div>}
           {loadingAdjustments ? (
             <div className="text-sm text-slate-500">Cargando ajustes...</div>
           ) : adjustments.length === 0 && returnedOrders.length === 0 ? (
@@ -373,9 +509,19 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                       <span className="text-slate-600 ml-2">- Orden #{order.order_number}</span>
                       <div className="text-xs text-slate-400">{dateTime}</div>
                     </div>
-                    <span className="font-semibold text-red-600">
-                      -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-red-600">
+                        -${order.commission_amount?.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || "0"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReturn(order.id)}
+                        disabled={deletingReturnId === order.id || settlingReturns}
+                        className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
+                      >
+                        {deletingReturnId === order.id ? "Eliminando..." : "Eliminar"}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -401,9 +547,19 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                       {adj.note && <span className="text-slate-600 ml-2">- {adj.note}</span>}
                       <div className="text-xs text-slate-400">{dateTime}</div>
                     </div>
-                    <span className="font-semibold">
-                      ${adj.amount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold">
+                        ${adj.amount.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAdjustment(adj.id)}
+                        disabled={deletingAdjustmentId === adj.id}
+                        className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
+                      >
+                        {deletingAdjustmentId === adj.id ? "Eliminando..." : "Eliminar"}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
