@@ -1,8 +1,8 @@
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format } from "date-fns";
 
 export function currentWeekRange(d = new Date()) {
-  const start = startOfWeek(d, { weekStartsOn: 1 }); // lunes
-  const end = endOfWeek(d, { weekStartsOn: 1 });
+  const start = startOfWeek(d, { weekStartsOn: 6 }); // sábado
+  const end = endOfWeek(d, { weekStartsOn: 6 }); // viernes
   return { start, end };
 }
 
@@ -24,6 +24,6 @@ export function formatDate(date: Date | string): string {
 }
 
 export function getWeekStart(date: Date = new Date()): Date {
-  return startOfWeek(date, { weekStartsOn: 1 });
+  return startOfWeek(date, { weekStartsOn: 6 });
 }
 

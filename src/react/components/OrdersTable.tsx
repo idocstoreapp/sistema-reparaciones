@@ -22,7 +22,8 @@ type LoadFilters = {
 export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false }: OrdersTableProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<"all" | "paid" | "pending" | "returned" | "cancelled">("all");
-  const [periodFilter, setPeriodFilter] = useState<"all" | "current_week">("all");
+  const [periodFilter, setPeriodFilter] = useState<"all" | "current_week" | "range">("all");
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const [orderSearch, setOrderSearch] = useState("");
   const [loading, setLoading] = useState(!isAdmin);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -213,6 +214,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     setAdminError(null);
     setFilter("all");
     setPeriodFilter("all");
+    setCustomRange({ start: "", end: "" });
     setOrderSearch("");
     if (isAdmin) {
       setLoading(false);
@@ -220,16 +222,31 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   }
 
   const filtered = useMemo(() => {
-    let weekStart: Date | null = null;
-    let weekEnd: Date | null = null;
+    let rangeStart: Date | null = null;
+    let rangeEnd: Date | null = null;
 
     if (periodFilter === "current_week") {
-      const { start } = currentWeekRange();
-      weekStart = new Date(start);
-      weekStart.setHours(0, 0, 0, 0);
-      weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 4); // lunes a viernes
-      weekEnd.setHours(23, 59, 59, 999);
+      const { start, end } = currentWeekRange();
+      rangeStart = new Date(start);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd = new Date(end);
+      rangeEnd.setHours(23, 59, 59, 999);
+    } else if (periodFilter === "range") {
+      if (customRange.start) {
+        rangeStart = new Date(customRange.start);
+        rangeStart.setHours(0, 0, 0, 0);
+      }
+      if (customRange.end) {
+        rangeEnd = new Date(customRange.end);
+        rangeEnd.setHours(23, 59, 59, 999);
+      } else if (rangeStart) {
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setHours(23, 59, 59, 999);
+      }
+      if (!rangeStart && customRange.end) {
+        rangeStart = new Date(customRange.end);
+        rangeStart.setHours(0, 0, 0, 0);
+      }
     }
 
     const orderQuery = orderSearch.trim().toLowerCase();
@@ -245,9 +262,12 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         }
       }
 
-      if (periodFilter === "current_week" && weekStart && weekEnd) {
+      if ((periodFilter === "current_week" || periodFilter === "range") && (rangeStart || rangeEnd)) {
         const created = new Date(o.created_at);
-        if (created < weekStart || created > weekEnd) {
+        if (rangeStart && created < rangeStart) {
+          return false;
+        }
+        if (rangeEnd && created > rangeEnd) {
           return false;
         }
       }
@@ -261,7 +281,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
       return true;
     });
-  }, [orders, filter, periodFilter, orderSearch]);
+  }, [orders, filter, periodFilter, orderSearch, customRange]);
 
   async function handleUpdateReceipt(orderId: string) {
     if (!editReceipt.trim()) {
@@ -539,6 +559,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     }
   }
 
+  function handlePeriodFilterChange(value: "all" | "current_week" | "range") {
+    setPeriodFilter(value);
+    if (value !== "range") {
+      setCustomRange({ start: "", end: "" });
+    }
+  }
+
   const orderFiltersToolbar = (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 w-full">
       <input
@@ -551,10 +578,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       <select
         className="w-full sm:w-auto sm:min-w-[160px] border border-slate-300 rounded-md px-3 py-2 text-sm"
         value={periodFilter}
-        onChange={(e) => setPeriodFilter(e.target.value as "all" | "current_week")}
+        onChange={(e) => handlePeriodFilterChange(e.target.value as "all" | "current_week" | "range")}
       >
         <option value="all">Todas las semanas</option>
-        <option value="current_week">Semana actual (L-V)</option>
+        <option value="current_week">Semana actual (S-V)</option>
+        <option value="range">Rango personalizado</option>
       </select>
       <select
         className="w-full sm:w-auto sm:min-w-[140px] border border-slate-300 rounded-md px-3 py-2 text-sm"
@@ -567,6 +595,36 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         <option value="returned">Devueltas</option>
         <option value="cancelled">Canceladas</option>
       </select>
+      {periodFilter === "range" && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+          <label className="flex flex-col text-xs text-slate-500 sm:text-[11px]">
+            Desde
+            <input
+              type="date"
+              className="border border-slate-300 rounded-md px-2 py-1 text-sm text-slate-700"
+              value={customRange.start}
+              onChange={(e) => setCustomRange((prev) => ({ ...prev, start: e.target.value }))}
+            />
+          </label>
+          <label className="flex flex-col text-xs text-slate-500 sm:text-[11px]">
+            Hasta
+            <input
+              type="date"
+              className="border border-slate-300 rounded-md px-2 py-1 text-sm text-slate-700"
+              value={customRange.end}
+              min={customRange.start || undefined}
+              onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
+            />
+          </label>
+          <button
+            type="button"
+            className="text-xs text-slate-500 underline underline-offset-2 mt-2 sm:mt-5"
+            onClick={() => setCustomRange({ start: "", end: "" })}
+          >
+            Limpiar rango
+          </button>
+        </div>
+      )}
     </div>
   );
 

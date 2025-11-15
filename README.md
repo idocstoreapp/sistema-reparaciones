@@ -113,7 +113,7 @@ npm run build
 
 ## 📝 Notas
 
-- Las semanas de comisión van de lunes a viernes
+- Las semanas de comisión van de sábado a viernes
 - Los viernes se "limpia" visualmente el dashboard (solo muestra semana actual)
 - Los datos históricos permanecen en la base de datos
 - El status 'paid' requiere número de recibo
