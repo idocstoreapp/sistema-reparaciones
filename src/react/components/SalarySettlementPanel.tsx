@@ -40,6 +40,7 @@ export default function SalarySettlementPanel({
   const [settledAmount, setSettledAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "otro">("efectivo");
   const [customAmountInput, setCustomAmountInput] = useState(0);
+  const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
 
   const { start: weekStartDate, end: weekEndDate } = currentWeekRange();
   const weekStartISO = weekStartDate.toISOString().slice(0, 10);
@@ -269,6 +270,33 @@ export default function SalarySettlementPanel({
     return formatCLP(amount);
   }
   const canEditAdjustments = context === "admin";
+
+  async function handleDeleteAdjustment(adjustmentId: string) {
+    const target = pendingAdjustments.find((adj) => adj.id === adjustmentId);
+    if (!target) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `¿Eliminar este ajuste de sueldo (${target.type === "advance" ? "Adelanto" : "Descuento"} de ${formatAmount(target.amount ?? 0)})?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setErrorMsg(null);
+    setDeletingAdjustmentId(adjustmentId);
+    const { error } = await supabase
+      .from("salary_adjustments")
+      .delete()
+      .eq("id", adjustmentId)
+      .eq("technician_id", technicianId);
+    setDeletingAdjustmentId(null);
+    if (error) {
+      console.error("Error eliminando ajuste:", error);
+      setErrorMsg("No pudimos eliminar el ajuste. Intenta nuevamente.");
+      return;
+    }
+    await loadPendingAdjustments();
+  }
 
   async function handleLiquidation() {
     const targetAmount = Math.max(minPayable, Math.min(customAmountInput, maxPayable));
@@ -635,6 +663,15 @@ export default function SalarySettlementPanel({
                           }`}
                         >
                           {isDeferred ? "Pendiente próxima semana" : isOmitted ? "Incluir" : "Omitir"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAdjustment(adj.id)}
+                          disabled={deletingAdjustmentId === adj.id}
+                          className="text-xs font-medium px-2 py-1 rounded-md border border-red-500 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Eliminar ajuste"
+                        >
+                          {deletingAdjustmentId === adj.id ? "..." : "🗑️"}
                         </button>
                       </div>
                     ) : (

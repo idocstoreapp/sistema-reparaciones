@@ -115,11 +115,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     
     if (!orderDate) {
       alert("Selecciona una fecha válida para la orden.");
+      setLoading(false);
       return;
     }
 
-    const createdAt = new Date(orderDate);
-    createdAt.setHours(12, 0, 0, 0); // evitar desfases por zona horaria
+    // Crear fecha en UTC para evitar problemas de zona horaria
+    // La fecha seleccionada viene en formato YYYY-MM-DD, crear Date en UTC
+    const [year, month, day] = orderDate.split('-').map(Number);
+    const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
 
     const { data: createdOrder, error } = await supabase
       .from("orders")
