@@ -105,12 +105,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    // Validar solo campos obligatorios: número de orden, equipo y servicio
     if (!orderNumber || !device || !service) {
-      alert("Por favor completa todos los campos obligatorios");
+      alert("Por favor completa todos los campos obligatorios (N° de Orden, Equipo y Servicio)");
       return;
     }
 
     setLoading(true);
+    // Si hay recibo, marcar como pagada, sino como pendiente
     const status = receiptNumber.trim() ? "paid" : "pending";
     
     if (!orderDate) {
@@ -124,6 +126,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     const [year, month, day] = orderDate.split('-').map(Number);
     const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
 
+    // Guardar la orden - medio de pago y recibo son opcionales y pueden ser null
     const { data: createdOrder, error } = await supabase
       .from("orders")
       .insert({
@@ -134,10 +137,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         service_description: service,
         replacement_cost: replacementCost,
         repair_cost: precioTotal, // Precio total cobrado
-        payment_method: paymentMethod || null,
-        receipt_number: receiptNumber.trim() || null,
+        payment_method: paymentMethod || null, // Opcional - puede ser null
+        receipt_number: receiptNumber.trim() || null, // Opcional - puede ser null
         status,
-        commission_amount: commission,
+        commission_amount: commission, // Si no hay medio de pago, será 0
         created_at: createdAt.toISOString(),
       })
       .select()
@@ -265,19 +268,19 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Método de Pago</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Método de Pago (Opcional)</label>
           <select
             className="w-full border border-slate-300 rounded-md px-3 py-2"
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
           >
-            <option value="">Seleccionar...</option>
+            <option value="">Sin seleccionar (se puede agregar después)</option>
             <option value="EFECTIVO">Efectivo</option>
             <option value="TARJETA">Tarjeta</option>
             <option value="TRANSFERENCIA">Transferencia</option>
           </select>
           <p className="text-xs text-slate-500 mt-1">
-            Opcional - Se puede agregar después al agregar el recibo
+            Puedes guardar la orden sin medio de pago y agregarlo después junto con el número de boleta
           </p>
         </div>
         
@@ -362,15 +365,15 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">N° Recibo</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">N° Recibo/Boleta (Opcional)</label>
           <input
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Opcional - Requerido para marcar como pagada"
+            placeholder="Puedes agregarlo después desde la tabla de órdenes"
             value={receiptNumber}
             onChange={(e) => setReceiptNumber(e.target.value)}
           />
           <p className="text-xs text-slate-500 mt-1">
-            Si no hay recibo, la orden quedará como pendiente
+            Puedes guardar la orden sin recibo. La orden quedará como pendiente hasta que agregues el número de boleta desde la tabla de órdenes
           </p>
         </div>
 

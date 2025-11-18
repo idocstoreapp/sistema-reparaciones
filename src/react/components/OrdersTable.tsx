@@ -284,11 +284,6 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   }, [orders, filter, periodFilter, orderSearch, customRange]);
 
   async function handleUpdateReceipt(orderId: string) {
-    if (!editReceipt.trim()) {
-      alert("Por favor ingresa un número de recibo");
-      return;
-    }
-
     // Obtener la orden actual para recalcular la comisión
     const currentOrder = orders.find((o) => o.id === orderId);
     if (!currentOrder) {
@@ -296,32 +291,38 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       return;
     }
 
-    // Validar número de boleta con Bsale (OPCIONAL - no bloquea si falla)
+    // Permitir actualizar medio de pago sin recibo
+    // Si hay recibo, validarlo; si no, solo actualizar el medio de pago
+    const hasReceipt = editReceipt.trim().length > 0;
+    
+    // Validar número de boleta con Bsale solo si se proporciona un recibo (OPCIONAL - no bloquea si falla)
     let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
     
-    // Intentar validar con Bsale, pero no bloquear si falla
-    try {
-      const bsaleValidation = await validateBsaleDocument(editReceipt.trim());
-      
-      // Solo usar datos de Bsale si la validación fue exitosa
-      if (bsaleValidation.exists && bsaleValidation.document) {
-        bsaleData = bsaleValidation.document;
-      } else {
-        // Si no existe o hay error, solo registrar en consola pero continuar
-        if (bsaleValidation.error) {
-          console.warn("Bsale validation skipped:", bsaleValidation.error);
+    if (hasReceipt) {
+      // Intentar validar con Bsale, pero no bloquear si falla
+      try {
+        const bsaleValidation = await validateBsaleDocument(editReceipt.trim());
+        
+        // Solo usar datos de Bsale si la validación fue exitosa
+        if (bsaleValidation.exists && bsaleValidation.document) {
+          bsaleData = bsaleValidation.document;
+        } else {
+          // Si no existe o hay error, solo registrar en consola pero continuar
+          if (bsaleValidation.error) {
+            console.warn("Bsale validation skipped:", bsaleValidation.error);
+          }
         }
+      } catch (error) {
+        // Si hay cualquier error, continuar sin validación
+        console.warn("Bsale validation error, continuing without validation:", error);
       }
-    } catch (error) {
-      // Si hay cualquier error, continuar sin validación
-      console.warn("Bsale validation error, continuing without validation:", error);
-    }
 
-    // Verificar duplicados en la base de datos (excluyendo la orden actual)
-    const isDuplicate = await checkReceiptNumberExists(editReceipt.trim(), orderId);
-    if (isDuplicate) {
-      alert("⚠️ Este número de boleta ya está registrado en otra orden");
-      return;
+      // Verificar duplicados en la base de datos solo si hay recibo (excluyendo la orden actual)
+      const isDuplicate = await checkReceiptNumberExists(editReceipt.trim(), orderId);
+      if (isDuplicate) {
+        alert("⚠️ Este número de boleta ya está registrado en otra orden");
+        return;
+      }
     }
 
     // Recalcular comisión si hay método de pago
@@ -332,17 +333,34 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       precioTotal: currentOrder.repair_cost || 0,
     });
 
+    // Si hay recibo, marcar como pagada; si no, mantener el estado actual o "pending"
+    const newStatus = hasReceipt ? "paid" : (currentOrder.status || "pending");
+
+    const updateData: {
+      payment_method: string | null;
+      status: string;
+      commission_amount: number;
+      receipt_number?: string | null;
+      bsale_number?: string | null;
+      bsale_url?: string | null;
+      bsale_total_amount?: number | null;
+    } = {
+      payment_method: paymentMethodToUse || null,
+      status: newStatus,
+      commission_amount: newCommission,
+    };
+
+    // Solo actualizar recibo si se proporciona
+    if (hasReceipt) {
+      updateData.receipt_number = editReceipt.trim();
+      updateData.bsale_number = bsaleData?.number || null;
+      updateData.bsale_url = bsaleData?.url || null;
+      updateData.bsale_total_amount = bsaleData?.totalAmount || null;
+    }
+
     const { error } = await supabase
       .from("orders")
-      .update({
-        receipt_number: editReceipt.trim(),
-        payment_method: paymentMethodToUse || null,
-        status: "paid",
-        bsale_number: bsaleData?.number || null,
-        bsale_url: bsaleData?.url || null,
-        bsale_total_amount: bsaleData?.totalAmount || null,
-        commission_amount: newCommission,
-      })
+      .update(updateData)
       .eq("id", orderId);
 
     if (error) {
@@ -842,7 +860,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
                           value={editReceipt}
                           onChange={(e) => setEditReceipt(e.target.value)}
-                          placeholder="N° Recibo"
+                          placeholder="N° Boleta (opcional)"
                           autoFocus
                         />
                         <select
@@ -855,6 +873,9 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           <option value="TARJETA">Tarjeta</option>
                           <option value="TRANSFERENCIA">Transferencia</option>
                         </select>
+                        <p className="text-[10px] text-slate-500">
+                          Puedes agregar solo el medio de pago o ambos
+                        </p>
                       </div>
                     ) : o.receipt_number ? (
                       <span className="text-slate-700 text-xs">{o.receipt_number}</span>
