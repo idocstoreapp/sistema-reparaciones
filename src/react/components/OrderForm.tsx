@@ -126,7 +126,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     const [year, month, day] = orderDate.split('-').map(Number);
     const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
 
-    // Guardar la orden - medio de pago y recibo son opcionales y pueden ser null
+    // Guardar la orden - medio de pago y recibo son opcionales
+    // payment_method no puede ser null, usar cadena vacía '' si no hay medio de pago
     const { data: createdOrder, error } = await supabase
       .from("orders")
       .insert({
@@ -137,7 +138,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         service_description: service,
         replacement_cost: replacementCost,
         repair_cost: precioTotal, // Precio total cobrado
-        payment_method: paymentMethod || null, // Opcional - puede ser null
+        payment_method: paymentMethod || '', // Usar '' en lugar de null (NOT NULL constraint)
         receipt_number: receiptNumber.trim() || null, // Opcional - puede ser null
         status,
         commission_amount: commission, // Si no hay medio de pago, será 0

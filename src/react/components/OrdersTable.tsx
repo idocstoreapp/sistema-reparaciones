@@ -337,7 +337,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     const newStatus = hasReceipt ? "paid" : (currentOrder.status || "pending");
 
     const updateData: {
-      payment_method: string | null;
+      payment_method: string;
       status: string;
       commission_amount: number;
       receipt_number?: string | null;
@@ -345,7 +345,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       bsale_url?: string | null;
       bsale_total_amount?: number | null;
     } = {
-      payment_method: paymentMethodToUse || null,
+      payment_method: paymentMethodToUse || '', // Usar '' en lugar de null (NOT NULL constraint)
       status: newStatus,
       commission_amount: newCommission,
     };
