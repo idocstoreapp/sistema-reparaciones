@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, currentMonthRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
+import { calcCommission } from "@/lib/commission";
+import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 
 interface WeeklySummaryProps {
@@ -84,9 +86,25 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
       // Pendientes: solo órdenes sin recibo, excluyendo devueltas y canceladas
+      // Recalcular comisión para órdenes pendientes basándose en el medio de pago actual
+      // (puede que hayan agregado el medio de pago después de crear la orden)
       const pending = weekOrders
         .filter((r) => r.status === "pending")
-        .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
+        .reduce((s, r) => {
+          // Si la orden tiene medio de pago, recalcular la comisión
+          // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
+          const paymentMethod = (r.payment_method as PaymentMethod) || "";
+          if (paymentMethod) {
+            const recalculatedCommission = calcCommission({
+              paymentMethod,
+              costoRepuesto: r.replacement_cost ?? 0,
+              precioTotal: r.repair_cost ?? 0,
+            });
+            return s + recalculatedCommission;
+          }
+          // Si no hay medio de pago, usar la comisión almacenada
+          return s + (r.commission_amount ?? 0);
+        }, 0);
       
       // Total del mes: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
       const monthGain = monthOrders

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
+import { calcCommission } from "@/lib/commission";
+import type { PaymentMethod } from "@/lib/commission";
 import type { SalaryAdjustment, Order } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
 
@@ -77,9 +79,25 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         const earned = orders
           .filter((o) => o.status === "paid")
           .reduce((s, o) => s + (o.commission_amount ?? 0), 0);
+        // Pendientes: recalcular comisión basándose en el medio de pago actual
+        // (puede que hayan agregado el medio de pago después de crear la orden)
         const pending = orders
           .filter((o) => o.status === "pending")
-          .reduce((s, o) => s + (o.commission_amount ?? 0), 0);
+          .reduce((s, o) => {
+            // Si la orden tiene medio de pago, recalcular la comisión
+            // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
+            const paymentMethod = (o.payment_method as PaymentMethod) || "";
+            if (paymentMethod) {
+              const recalculatedCommission = calcCommission({
+                paymentMethod,
+                costoRepuesto: o.replacement_cost ?? 0,
+                precioTotal: o.repair_cost ?? 0,
+              });
+              return s + recalculatedCommission;
+            }
+            // Si no hay medio de pago, usar la comisión almacenada
+            return s + (o.commission_amount ?? 0);
+          }, 0);
 
         // Calcular descuento por devoluciones y cancelaciones
         // Solo contar órdenes que estaban pagadas antes de ser devueltas/canceladas
