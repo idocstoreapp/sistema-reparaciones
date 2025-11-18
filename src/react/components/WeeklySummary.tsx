@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, currentMonthRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
-import { calcCommission } from "@/lib/commission";
-import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 
 interface WeeklySummaryProps {
@@ -17,7 +15,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     weekGain: 0,
     weekAdjustments: 0,
     weekNet: 0,
-    pending: 0,
+    pendingCount: 0,
     monthGain: 0,
     returnsAndCancellations: 0,
     totalReturnsAndCancellations: 0,
@@ -96,26 +94,10 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .filter((r) => r.status === "paid")
         .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
-      // Pendientes: calcular el TOTAL de todas las órdenes pendientes (sin límite de fecha)
-      // Suma total del dinero que falta por recibir por órdenes sin recibo
-      // Recalcular comisión para cada orden pendiente basándose en el medio de pago actual
-      // (puede que hayan agregado el medio de pago después de crear la orden)
+      // Pendientes: solo contar la cantidad de órdenes pendientes (sin límite de fecha)
+      // No calculamos el total de dinero para no modificar la fórmula original
       const allPending = allPendingOrders ?? [];
-      const pending = allPending.reduce((s, r) => {
-        // Si la orden tiene medio de pago, recalcular la comisión
-        // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
-        const paymentMethod = (r.payment_method as PaymentMethod) || "";
-        if (paymentMethod) {
-          const recalculatedCommission = calcCommission({
-            paymentMethod,
-            costoRepuesto: r.replacement_cost ?? 0,
-            precioTotal: r.repair_cost ?? 0,
-          });
-          return s + recalculatedCommission;
-        }
-        // Si no hay medio de pago, usar la comisión almacenada
-        return s + (r.commission_amount ?? 0);
-      }, 0);
+      const pendingCount = allPending.length; // Contar cantidad de órdenes pendientes
       
       // Total del mes: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
       const monthGain = monthOrders
@@ -141,7 +123,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         weekGain,
         weekAdjustments: weekAdjustmentsTotal,
         weekNet,
-        pending,
+        pendingCount,
         monthGain,
         returnsAndCancellations,
         totalReturnsAndCancellations,
@@ -193,9 +175,14 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         title="Pendientes de Pago"
         value={
           <>
-            <span>${formatCLP(kpis.pending)}</span>
-            <span className="block text-xs font-normal text-slate-500 mt-1">
-              Total por falta de recibo
+            <span className="text-2xl font-semibold text-slate-900">
+              {kpis.pendingCount}
+            </span>
+            <span className="block text-sm font-normal text-slate-500 mt-1">
+              {kpis.pendingCount === 1 ? 'orden pendiente' : 'órdenes pendientes'}
+            </span>
+            <span className="block text-xs font-normal text-slate-400 mt-1">
+              Sin recibo registrado
             </span>
           </>
         }
