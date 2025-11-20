@@ -71,7 +71,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     let q = supabase
       .from("orders")
-      .select("*")
+      .select(`
+        *,
+        suppliers (
+          id,
+          name
+        )
+      `)
       .order("created_at", { ascending: false });
 
     if (filters?.technicianId) {
@@ -779,6 +785,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Servicio</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Pago</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Repuesto</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Proveedor</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Costo Rep.</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Estado</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Recibo</th>
@@ -815,6 +822,9 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       ) : (
                         <span className="text-slate-700">{formatCLP(o.replacement_cost || 0)}</span>
                       )}
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">
+                      {(o as any).suppliers?.name || "-"}
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
@@ -992,7 +1002,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                 </tr>
                   {expandedOrderId === o.id && (
                     <tr className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={(technicianId || isAdmin) ? 10 : 9} className="px-4 py-4">
+                      <td colSpan={(technicianId || isAdmin) ? 11 : 10} className="px-4 py-4">
                         <div className="space-y-4">
                           <div className="flex items-start justify-between">
                             <div>
