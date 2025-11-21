@@ -963,7 +963,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                   Editar Montos
                                 </button>
                               )}
-                              {technicianId && o.status === "pending" && (
+                              {(technicianId || isAdmin) && o.status === "pending" && (
                                 <button
                                   onClick={() => {
                                     setEditingId(o.id);
