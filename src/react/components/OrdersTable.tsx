@@ -395,12 +395,21 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     if (error) {
       alert(`Error: ${error.message}`);
     } else {
+      // Si se actualizó la fecha a la semana actual, mostrar mensaje informativo
+      if (updateData.created_at) {
+        const orderDate = new Date(currentOrder.created_at);
+        const { start: currentWeekStart } = currentWeekRange();
+        if (orderDate < currentWeekStart) {
+          console.log(`✅ Orden ${currentOrder.order_number} actualizada a la semana actual (recibo agregado hoy)`);
+        }
+      }
+
       setEditingId(null);
       setEditReceipt("");
       setEditPaymentMethod("");
       refreshOrders(); // Recargar órdenes
       if (onUpdate) onUpdate(); // Notificar al componente padre
-      // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
+      // Disparar evento para notificar a otros componentes (WeeklySummary, AdminReports, etc.)
       window.dispatchEvent(new CustomEvent('orderUpdated'));
     }
   }
@@ -1027,6 +1036,16 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <tr className="border-b border-slate-100 bg-slate-50">
                       <td colSpan={(technicianId || isAdmin) ? 11 : 10} className="px-4 py-4">
                         <div className="space-y-4">
+                          {isAdmin && o.original_created_at && o.original_created_at !== o.created_at && (
+                            <div className="pb-2 border-b border-slate-200">
+                              <p className="text-[10px] text-slate-400">
+                                📝 Registrada originalmente: {new Date(o.original_created_at).toLocaleString("es-CL", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                })}
+                              </p>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div>
                               <h4 className="text-sm font-semibold text-slate-800">Notas de la orden</h4>

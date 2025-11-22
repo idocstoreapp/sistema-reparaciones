@@ -163,14 +163,20 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     }
     load();
     
-    // Escuchar eventos de liquidación para refrescar el dashboard
+    // Escuchar eventos de liquidación y actualización de órdenes para refrescar el dashboard
     const handleSettlementCreated = () => {
       load();
     };
     
+    const handleOrderUpdated = () => {
+      load();
+    };
+    
     window.addEventListener('settlementCreated', handleSettlementCreated);
+    window.addEventListener('orderUpdated', handleOrderUpdated);
     return () => {
       window.removeEventListener('settlementCreated', handleSettlementCreated);
+      window.removeEventListener('orderUpdated', handleOrderUpdated);
     };
   }, [technicianId, refreshKey]);
 

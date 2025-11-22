@@ -126,6 +126,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     // La fecha seleccionada viene en formato YYYY-MM-DD, crear Date en UTC
     const [year, month, day] = orderDate.split('-').map(Number);
     const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+    const now = new Date();
 
     // Guardar la orden - medio de pago y recibo son opcionales
     // payment_method no puede ser null, usar cadena vacía '' si no hay medio de pago
@@ -144,6 +145,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         status,
         commission_amount: commission, // Si no hay medio de pago, será 0
         created_at: createdAt.toISOString(),
+        original_created_at: now.toISOString(), // Fecha/hora real de creación (registro para admin)
       })
       .select()
       .maybeSingle();

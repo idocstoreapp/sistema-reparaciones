@@ -14,6 +14,7 @@ export interface Profile {
 export interface Order {
   id: string;
   created_at: string;
+  original_created_at?: string | null;
   order_number: string;
   technician_id: string;
   supplier_id?: string | null;

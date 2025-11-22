@@ -160,14 +160,20 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
   useEffect(() => {
     void loadData();
     
-    // Escuchar eventos de liquidación para refrescar el reporte
+    // Escuchar eventos de liquidación y actualización de órdenes para refrescar el reporte
     const handleSettlementCreated = () => {
       void loadData();
     };
     
+    const handleOrderUpdated = () => {
+      void loadData();
+    };
+    
     window.addEventListener('settlementCreated', handleSettlementCreated);
+    window.addEventListener('orderUpdated', handleOrderUpdated);
     return () => {
       window.removeEventListener('settlementCreated', handleSettlementCreated);
+      window.removeEventListener('orderUpdated', handleOrderUpdated);
     };
   }, [loadData, refreshKey]);
 
