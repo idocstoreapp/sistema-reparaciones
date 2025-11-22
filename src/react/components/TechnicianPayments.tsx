@@ -868,11 +868,7 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
   );
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h3 className="text-lg font-semibold text-slate-900 mb-4">
-        Pagos a Técnicos
-      </h3>
-
+    <div className="p-6 bg-white">
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 space-y-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>

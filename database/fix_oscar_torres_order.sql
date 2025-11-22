@@ -20,13 +20,26 @@
 -- WHERE o.order_number = '23568'
 --   AND u.name ILIKE '%oscar%torres%';
 
--- Paso 2: Actualizar la fecha de la orden a la fecha actual
--- Esto moverá la orden a la semana actual
+-- IMPORTANTE: Este script actualiza la orden 23568 de Oscar Torres
+-- a la semana actual porque el recibo se agregó hoy (22/11/2025)
+
+-- Paso 1: Verificar la orden actual y guardar la fecha original
+UPDATE orders
+SET 
+  original_created_at = COALESCE(original_created_at, created_at)
+WHERE order_number = '23568'
+  AND technician_id IN (
+    SELECT id FROM users WHERE name ILIKE '%oscar%torres%'
+  )
+  AND original_created_at IS NULL;
+
+-- Paso 2: Actualizar la fecha de la orden a la fecha/hora actual
+-- Esto moverá la orden a la semana actual para que cuente en esta semana
 UPDATE orders
 SET 
   created_at = NOW(),  -- Actualizar a fecha/hora actual
-  -- También actualizar los campos de metadata que se actualizan automáticamente
-  -- (el trigger debería hacerlo automáticamente, pero por si acaso)
+  -- Los campos week_start, month, year se actualizan automáticamente por el trigger
+  -- Pero los actualizamos manualmente para asegurar
   week_start = DATE_TRUNC('week', NOW())::DATE,
   month = EXTRACT(MONTH FROM NOW())::INTEGER,
   year = EXTRACT(YEAR FROM NOW())::INTEGER

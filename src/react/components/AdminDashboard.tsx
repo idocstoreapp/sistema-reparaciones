@@ -20,6 +20,9 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [supplierPurchasesOpen, setSupplierPurchasesOpen] = useState(false);
+  const [userManagementOpen, setUserManagementOpen] = useState(false);
+  const [technicianPaymentsOpen, setTechnicianPaymentsOpen] = useState(false);
 
   // Función para recargar KPIs
   const refreshKPIs = () => {
@@ -124,14 +127,91 @@ export default function AdminDashboard() {
 
       <AdminReports key={refreshKey} />
 
-      <SupplierPurchases key={refreshKey} />
-
-      <UserManagement />
-
-      <div className="grid grid-cols-1 gap-6">
-        <TechnicianPayments key={refreshKey} />
-        <OrdersTable isAdmin={true} onUpdate={refreshKPIs} />
+      {/* Card colapsable para Compras a Proveedores */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => setSupplierPurchasesOpen(!supplierPurchasesOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🛒</span>
+            <div className="text-left">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Compras a Proveedores
+              </h3>
+              <p className="text-sm text-slate-600">
+                Gestiona y consulta las compras realizadas a proveedores
+              </p>
+            </div>
+          </div>
+          <span className="text-slate-400 text-xl">
+            {supplierPurchasesOpen ? "▼" : "▶"}
+          </span>
+        </button>
+        {supplierPurchasesOpen && (
+          <div className="border-t border-slate-200">
+            <SupplierPurchases key={refreshKey} />
+          </div>
+        )}
       </div>
+
+      {/* Card colapsable para Gestión de Usuarios */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => setUserManagementOpen(!userManagementOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">👥</span>
+            <div className="text-left">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Gestión de Usuarios
+              </h3>
+              <p className="text-sm text-slate-600">
+                Administra técnicos y administradores del sistema
+              </p>
+            </div>
+          </div>
+          <span className="text-slate-400 text-xl">
+            {userManagementOpen ? "▼" : "▶"}
+          </span>
+        </button>
+        {userManagementOpen && (
+          <div className="border-t border-slate-200">
+            <UserManagement />
+          </div>
+        )}
+      </div>
+
+      {/* Card colapsable para Pago a Técnicos */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => setTechnicianPaymentsOpen(!technicianPaymentsOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💵</span>
+            <div className="text-left">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Pago a Técnicos
+              </h3>
+              <p className="text-sm text-slate-600">
+                Gestiona pagos, liquidaciones y ajustes de sueldo de técnicos
+              </p>
+            </div>
+          </div>
+          <span className="text-slate-400 text-xl">
+            {technicianPaymentsOpen ? "▼" : "▶"}
+          </span>
+        </button>
+        {technicianPaymentsOpen && (
+          <div className="border-t border-slate-200">
+            <TechnicianPayments key={refreshKey} />
+          </div>
+        )}
+      </div>
+
+      <OrdersTable isAdmin={true} onUpdate={refreshKPIs} />
     </div>
   );
 }

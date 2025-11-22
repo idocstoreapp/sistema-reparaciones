@@ -263,7 +263,7 @@ export default function AdminReports() {
 
     let q = supabase
       .from("orders")
-      .select("*, technician:users!technician_id(name), suppliers(id, name)")
+      .select("*, original_created_at, technician:users!technician_id(name), suppliers(id, name)")
       .order("created_at", { ascending: false });
 
     // Aplicar filtro de técnico
@@ -507,7 +507,22 @@ export default function AdminReports() {
                         ? "bg-red-50/30" 
                         : ""
                     }`}>
-                      <td className="py-2 px-2 text-xs">{formatDate(o.created_at)}</td>
+                      <td className="py-2 px-2 text-xs">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">{formatDate(o.created_at)}</span>
+                            {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                              <span className="text-[10px] text-amber-600" title="⚠️ Fecha modificada">⚠️</span>
+                            )}
+                          </div>
+                          {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                            <span className="text-[9px] text-amber-600 italic block">
+                              <span className="font-medium">Original:</span> {new Date(o.original_created_at).toLocaleDateString('es-CL')} → 
+                              <span className="font-medium"> Cambiada a:</span> {new Date(o.created_at).toLocaleDateString('es-CL')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2 px-2 text-xs font-medium">{o.order_number || "-"}</td>
                       <td className="py-2 px-2 text-xs">
                         {(o as any).technician?.name || "N/A"}
