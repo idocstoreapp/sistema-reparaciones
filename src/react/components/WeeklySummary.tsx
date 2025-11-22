@@ -27,16 +27,39 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       setLoading(true);
       const { start, end } = currentWeekRange();
       const { start: ms, end: me } = currentMonthRange();
+      const weekStartISO = start.toISOString().slice(0, 10);
+
+      // Consultar si hay liquidaciones registradas para esta semana
+      // Si hay liquidación, solo contar órdenes creadas DESPUÉS de la liquidación más reciente
+      const { data: settlementsData } = await supabase
+        .from("salary_settlements")
+        .select("created_at")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO)
+        .order("created_at", { ascending: false });
+
+      // Fecha de la última liquidación de la semana (si existe)
+      const lastSettlementDate = settlementsData && settlementsData.length > 0
+        ? new Date(settlementsData[0].created_at)
+        : null;
 
       // Consulta para órdenes de la semana
-      const { data: week, error: weekError } = await supabase
+      // Si hay liquidación, solo contar órdenes creadas DESPUÉS de la liquidación
+      let weekQuery = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
+      
+      // Si hay liquidación, excluir órdenes liquidadas (solo contar órdenes nuevas)
+      if (lastSettlementDate) {
+        weekQuery = weekQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
 
-      // Consulta para órdenes del mes
+      const { data: week, error: weekError } = await weekQuery;
+
+      // Consulta para órdenes del mes (sin excluir por liquidación - se conserva el total del mes)
       const { data: month, error: monthError } = await supabase
         .from("orders")
         .select("*")
@@ -59,12 +82,20 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .eq("technician_id", technicianId)
         .eq("status", "pending");
 
-      const { data: weeklyAdjustments, error: adjustmentsError } = await supabase
+      // Ajustes de la semana - solo los creados después de la última liquidación (si existe)
+      let adjustmentsQuery = supabase
         .from("salary_adjustments")
         .select("amount")
         .eq("technician_id", technicianId)
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
+      
+      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      if (lastSettlementDate) {
+        adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+      
+      const { data: weeklyAdjustments, error: adjustmentsError } = await adjustmentsQuery;
 
       if (weekError) {
         console.error("Error loading week orders:", weekError);
@@ -131,6 +162,16 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       setLoading(false);
     }
     load();
+    
+    // Escuchar eventos de liquidación para refrescar el dashboard
+    const handleSettlementCreated = () => {
+      load();
+    };
+    
+    window.addEventListener('settlementCreated', handleSettlementCreated);
+    return () => {
+      window.removeEventListener('settlementCreated', handleSettlementCreated);
+    };
   }, [technicianId, refreshKey]);
 
   if (loading) {

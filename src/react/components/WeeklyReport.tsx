@@ -52,26 +52,55 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       const { start, end } = currentWeekRange();
       const weekStartISO = start.toISOString().slice(0, 10);
 
-      const [{ data: orders }, { data: adjustmentData }, { data: settlementsData }] = await Promise.all([
-        supabase
+      // Consultar si hay liquidaciones registradas para esta semana
+      const { data: settlementsData } = await supabase
+        .from("salary_settlements")
+        .select("created_at")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO)
+        .order("created_at", { ascending: false });
+
+      // Fecha de la última liquidación de la semana (si existe)
+      const lastSettlementDate = settlementsData && settlementsData.length > 0
+        ? new Date(settlementsData[0].created_at)
+        : null;
+
+      // Consulta para órdenes de la semana
+      // Si hay liquidación, solo contar órdenes creadas DESPUÉS de la liquidación
+      let ordersQuery = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
         .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("salary_adjustments")
-          .select("*")
-          .eq("technician_id", technicianId)
-          .gte("created_at", start.toISOString())
-          .lte("created_at", end.toISOString())
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("salary_settlements")
-          .select("amount")
-          .eq("technician_id", technicianId)
-          .eq("week_start", weekStartISO),
+        .lte("created_at", end.toISOString());
+      
+      if (lastSettlementDate) {
+        ordersQuery = ordersQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+
+      // Consulta para ajustes de la semana
+      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      let adjustmentsQuery = supabase
+        .from("salary_adjustments")
+        .select("*")
+        .eq("technician_id", technicianId)
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
+      
+      if (lastSettlementDate) {
+        adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+
+      // Consulta para liquidaciones (solo montos)
+      const { data: settlementsAmounts } = await supabase
+        .from("salary_settlements")
+        .select("amount")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO);
+
+      const [{ data: orders }, { data: adjustmentData }] = await Promise.all([
+        ordersQuery.order("created_at", { ascending: false }),
+        adjustmentsQuery.order("created_at", { ascending: false }),
       ]);
 
       if (orders) {
@@ -120,7 +149,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
       setSettledAmount(
-        (settlementsData as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
+        (settlementsAmounts as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
       );
     } finally {
       setLoading(false);
@@ -130,6 +159,16 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
 
   useEffect(() => {
     void loadData();
+    
+    // Escuchar eventos de liquidación para refrescar el reporte
+    const handleSettlementCreated = () => {
+      void loadData();
+    };
+    
+    window.addEventListener('settlementCreated', handleSettlementCreated);
+    return () => {
+      window.removeEventListener('settlementCreated', handleSettlementCreated);
+    };
   }, [loadData, refreshKey]);
 
   const totalAdjustments = useMemo(

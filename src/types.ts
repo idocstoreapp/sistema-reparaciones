@@ -69,7 +69,7 @@ export interface SalarySettlement {
   amount: number;
   note?: string | null;
   context?: "technician" | "admin";
-  payment_method?: "efectivo" | "transferencia" | "otro" | null;
+  payment_method?: "efectivo" | "transferencia" | "efectivo/transferencia" | null;
   details?: Record<string, any> | null;
   created_by?: string | null;
   created_at: string;

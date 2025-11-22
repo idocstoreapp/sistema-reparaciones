@@ -4,6 +4,7 @@ import { calcCommission } from "@/lib/commission";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
+import DeviceAutocomplete from "./DeviceAutocomplete";
 
 interface OrderFormProps {
   technicianId: string;
@@ -213,13 +214,15 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Equipo (Marca y Modelo) *</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Ej: iPhone 13 Pro"
+          <DeviceAutocomplete
             value={device}
-            onChange={(e) => setDevice(e.target.value)}
+            onChange={setDevice}
+            placeholder="Ej: iPhone 13 Pro"
             required
           />
+          <p className="text-xs text-slate-500 mt-1">
+            Empieza a escribir la marca o modelo para ver sugerencias automáticas (iPhone, Samsung, Huawei, MacBook, iPad, Apple Watch)
+          </p>
         </div>
         
         <div>

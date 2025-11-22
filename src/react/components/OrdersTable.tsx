@@ -350,6 +350,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       bsale_number?: string | null;
       bsale_url?: string | null;
       bsale_total_amount?: number | null;
+      created_at?: string;
     } = {
       payment_method: paymentMethodToUse || '', // Usar '' en lugar de null (NOT NULL constraint)
       status: newStatus,
@@ -362,6 +363,28 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       updateData.bsale_number = bsaleData?.number || null;
       updateData.bsale_url = bsaleData?.url || null;
       updateData.bsale_total_amount = bsaleData?.totalAmount || null;
+
+      // Si la orden estaba pendiente y ahora se le agrega un recibo,
+      // verificar si la fecha de la orden es de una semana diferente a la actual
+      // Si es así, actualizar la fecha a la semana actual para que cuente como trabajo de esta semana
+      if (currentOrder.status === "pending" || !currentOrder.receipt_number) {
+        const orderDate = new Date(currentOrder.created_at);
+        const { start: currentWeekStart, end: currentWeekEnd } = currentWeekRange();
+        
+        // Verificar si la orden es de una semana diferente a la actual
+        if (orderDate < currentWeekStart || orderDate > currentWeekEnd) {
+          // Actualizar la fecha al inicio de la semana actual
+          // Usar la fecha/hora actual pero ajustada al inicio del día en UTC
+          const now = new Date();
+          const todayUTC = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            12, 0, 0, 0
+          ));
+          updateData.created_at = todayUTC.toISOString();
+        }
+      }
     }
 
     const { error } = await supabase
