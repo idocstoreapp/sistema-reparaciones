@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import type { Order, OrderNote, Profile } from "@/types";
-import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
+import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, type DuplicateInfo } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
 
@@ -50,6 +50,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [hasAdminSearched, setHasAdminSearched] = useState(!isAdmin);
   const [adminActiveFilters, setAdminActiveFilters] = useState<LoadFilters | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
+  const [duplicates, setDuplicates] = useState<Record<string, DuplicateInfo>>({});
 
   const localOptions = useMemo(() => {
     const locales = new Set<string>();
@@ -99,8 +100,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     if (error) {
       console.error("Error loading orders:", error);
       setOrders([]);
+      setDuplicates({});
     } else {
-      setOrders((data as Order[]) ?? []);
+      const loadedOrders = (data as Order[]) ?? [];
+      setOrders(loadedOrders);
+      // Detectar duplicados después de cargar las órdenes
+      const detectedDuplicates = detectDuplicates(loadedOrders);
+      setDuplicates(detectedDuplicates);
     }
     setLoading(false);
   }, [technicianId, isAdmin]);
@@ -479,7 +485,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       
       // Esperar un momento antes de refrescar para asegurar que la actualización se complete en la BD
       setTimeout(() => {
-        refreshOrders(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes (esto actualizará los duplicados automáticamente)
         if (onUpdate) onUpdate(); // Notificar al componente padre
         // Disparar evento para notificar a otros componentes (WeeklySummary, AdminReports, etc.)
         window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -532,7 +538,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         setEditingCostsId(null);
         setEditReplacementCost(0);
         setEditRepairCost(0);
-        refreshOrders(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes (esto actualizará los duplicados automáticamente)
         if (onUpdate) onUpdate(); // Notificar al componente padre para actualizar KPIs
         // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
         window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -879,6 +885,21 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
           {isAdmin ? "No se encontraron órdenes con los filtros seleccionados." : "No hay órdenes registradas"}
         </div>
       ) : (
+        <>
+          {(() => {
+            const visibleDuplicates = filtered.filter(o => duplicates[o.id]);
+            return visibleDuplicates.length > 0 && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-xs text-amber-800 font-semibold mb-1">
+                  ⚠️ Advertencia: Se detectaron órdenes con datos duplicados
+                </p>
+                <p className="text-xs text-amber-700">
+                  Hay {visibleDuplicates.length} orden(es) visible(s) con números de orden o recibos repetidos. 
+                  Las filas afectadas están resaltadas en amarillo con un ícono ⚠️.
+                </p>
+              </div>
+            );
+          })()}
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full align-middle">
             <div className="overflow-visible">
@@ -906,6 +927,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                   <tr className={`border-b ${expandedOrderId === o.id ? "border-transparent" : "border-slate-100"} ${
                     o.status === "returned" || o.status === "cancelled" 
                       ? "bg-red-50/30 hover:bg-red-50/50" 
+                      : duplicates[o.id] 
+                      ? "bg-amber-50/50 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
                       : "hover:bg-slate-50"
                   }`}>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">
@@ -929,7 +952,19 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                         )}
                       </div>
                     </td>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">{o.order_number || "-"}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">
+                      <div className="flex items-center gap-1">
+                        <span>{o.order_number || "-"}</span>
+                        {duplicates[o.id]?.hasDuplicateOrderNumber && (
+                          <span 
+                            className="text-amber-600 cursor-help font-bold" 
+                            title="⚠️ Este número de orden está duplicado"
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
                     <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px] truncate" title={o.service_description}>{o.service_description}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
@@ -1022,7 +1057,17 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                         </p>
                       </div>
                     ) : o.receipt_number ? (
-                      <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                        {duplicates[o.id]?.hasDuplicateReceipt && (
+                          <span 
+                            className="text-amber-600 cursor-help font-bold" 
+                            title="⚠️ Este número de recibo está duplicado"
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-slate-400 text-xs">-</span>
                     )}
@@ -1255,6 +1300,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );
