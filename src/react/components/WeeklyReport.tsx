@@ -361,6 +361,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
             <SalarySettlementPanel
               technicianId={technicianId}
               baseAmount={baseAmountForSettlement}
+              adjustmentTotal={totalAdjustments}
               context="technician"
               onAfterSettlement={() => void loadData()}
             />
@@ -470,6 +471,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
             <SalarySettlementPanel
               technicianId={technicianId}
               baseAmount={baseAmountForSettlement}
+              adjustmentTotal={totalAdjustments}
               context="technician"
               onAfterSettlement={() => void loadData()}
             />

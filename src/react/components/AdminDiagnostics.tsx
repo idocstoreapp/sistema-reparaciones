@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabaseAdmin, adminConfigDebug } from "@/lib/supabase-admin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
  * Componente de diagnóstico para verificar la configuración del Service Role Key
@@ -34,8 +34,8 @@ export default function AdminDiagnostics() {
       envVars: {
         PUBLIC_SUPABASE_URL: url ? '✅ Configurado' : '❌ No configurado',
         PUBLIC_SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey ? '✅ Configurado' : '❌ No configurado',
-        'Debug - hasUrl': adminConfigDebug.hasUrl ? '✅' : '❌',
-        'Debug - hasServiceRoleKey': adminConfigDebug.hasServiceRoleKey ? '✅' : '❌',
+        'Debug - hasUrl': import.meta.env.PUBLIC_SUPABASE_URL ? '✅' : '❌',
+        'Debug - hasServiceRoleKey': import.meta.env.PUBLIC_SUPABASE_SERVICE_ROLE_KEY ? '✅' : '❌',
         'Todas las keys SUPABASE': allEnvKeys.join(', ') || 'Ninguna encontrada',
       },
     });

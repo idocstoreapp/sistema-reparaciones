@@ -11,6 +11,7 @@ import AdminReports from "./AdminReports";
 import TechnicianPayments from "./TechnicianPayments";
 import SupplierPurchases from "./SupplierPurchases";
 import UserManagement from "./UserManagement";
+import BranchManagement from "./BranchManagement";
 
 export default function AdminDashboard() {
   const [kpis, setKpis] = useState({
@@ -24,6 +25,7 @@ export default function AdminDashboard() {
   const [supplierPurchasesOpen, setSupplierPurchasesOpen] = useState(false);
   const [userManagementOpen, setUserManagementOpen] = useState(false);
   const [technicianPaymentsOpen, setTechnicianPaymentsOpen] = useState(false);
+  const [branchManagementOpen, setBranchManagementOpen] = useState(false);
 
   // Función para recargar KPIs
   const refreshKPIs = () => {
@@ -212,6 +214,34 @@ export default function AdminDashboard() {
         {technicianPaymentsOpen && (
           <div className="border-t border-slate-200">
             <TechnicianPayments key={refreshKey} />
+          </div>
+        )}
+      </div>
+
+      {/* Card colapsable para Gestión de Sucursales y Gastos */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => setBranchManagementOpen(!branchManagementOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🏢</span>
+            <div className="text-left">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Gestión de Sucursales y Gastos
+              </h3>
+              <p className="text-sm text-slate-600">
+                Administra sucursales, gastos hormiga, gastos generales y visualiza KPIs por sucursal
+              </p>
+            </div>
+          </div>
+          <span className="text-slate-400 text-xl">
+            {branchManagementOpen ? "▼" : "▶"}
+          </span>
+        </button>
+        {branchManagementOpen && (
+          <div className="border-t border-slate-200">
+            <BranchManagement key={refreshKey} />
           </div>
         )}
       </div>

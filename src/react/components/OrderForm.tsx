@@ -173,6 +173,13 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     const payoutWeek = status === "paid" ? calculatePayoutWeek(now) : null;
     const payoutYear = status === "paid" ? calculatePayoutYear(now) : null;
 
+    // Obtener sucursal_id del técnico
+    const { data: technician } = await supabase
+      .from("users")
+      .select("sucursal_id")
+      .eq("id", technicianId)
+      .single();
+
     // Guardar la orden - medio de pago y recibo son opcionales
     // payment_method no puede ser null, usar cadena vacía '' si no hay medio de pago
     const { data: createdOrder, error } = await supabase
@@ -199,6 +206,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         bsale_number: bsaleData?.number || null,
         bsale_url: bsaleData?.url || null,
         bsale_total_amount: bsaleData?.totalAmount || null,
+        // Campo de sucursal: heredado del técnico
+        sucursal_id: technician?.sucursal_id || null,
       })
       .select()
       .maybeSingle();

@@ -40,7 +40,7 @@ function getBsaleTokens(): string[] {
   // Primero intentar con múltiples tokens (separados por coma)
   const multipleTokens = import.meta.env.PUBLIC_BSALE_ACCESS_TOKENS;
   if (multipleTokens) {
-    return multipleTokens.split(',').map(token => token.trim()).filter(token => token.length > 0);
+    return multipleTokens.split(',').map((token: string) => token.trim()).filter((token: string) => token.length > 0);
   }
   
   // Si no hay múltiples tokens, usar el token único
@@ -216,15 +216,6 @@ export async function validateBsaleDocument(
     error: lastError,
   };
 }
-
-  if (!receiptNumber || !receiptNumber.trim()) {
-    return {
-      exists: false,
-      document: null,
-      error: "Número de boleta vacío",
-    };
-  }
-
 
 /**
  * Verifica si un número de recibo ya está registrado en la base de datos

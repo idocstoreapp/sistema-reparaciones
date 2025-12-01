@@ -1,4 +1,4 @@
-export type Role = "admin" | "technician";
+export type Role = "admin" | "technician" | "encargado";
 
 export interface Profile {
   id: string;
@@ -9,6 +9,7 @@ export interface Profile {
   email: string;
   avatar_url?: string | null;
   local?: string | null;
+  sucursal_id?: string | null;
 }
 
 export interface Order {
@@ -38,6 +39,8 @@ export interface Order {
   bsale_number?: string | null;
   bsale_url?: string | null;
   bsale_total_amount?: number | null;
+  // Campo de sucursal
+  sucursal_id?: string | null;
 }
 
 export interface OrderNote {
@@ -86,5 +89,51 @@ export interface SalarySettlement {
   details?: Record<string, any> | null;
   created_by?: string | null;
   created_at: string;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmallExpense {
+  id: string;
+  sucursal_id: string;
+  user_id: string;
+  tipo: "aseo" | "mercaderia" | "compras_pequenas";
+  monto: number;
+  fecha: string;
+  descripcion?: string | null;
+  created_at: string;
+  branch?: Branch;
+  user?: Profile;
+}
+
+export interface GeneralExpense {
+  id: string;
+  sucursal_id: string;
+  user_id: string;
+  tipo: "arriendo" | "internet" | "luz" | "agua" | "facturas" | "servicios";
+  monto: number;
+  fecha: string;
+  descripcion?: string | null;
+  created_at: string;
+  branch?: Branch;
+  user?: Profile;
+}
+
+export interface BranchExpensesSummary {
+  branch_id: string;
+  branch_name: string;
+  total_small_expenses: number;
+  total_general_expenses: number;
+  total_repuestos: number;
+  total_pagos_tecnicos: number;
+  total_pagos_encargados: number;
+  total_general: number;
 }
 

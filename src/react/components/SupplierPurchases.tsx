@@ -40,7 +40,7 @@ export default function SupplierPurchases() {
   
   // Filtros
   const [selectedSupplier, setSelectedSupplier] = useState<string>("all");
-  const [dateRange, setDateRange] = useState<"custom" | "week">("week");
+  const [dateRange, setDateRange] = useState<"custom" | "week" | "2days" | "15days" | "month">("week");
   const [startDate, setStartDate] = useState<string>(defaultDates.start);
   const [endDate, setEndDate] = useState<string>(defaultDates.end);
 

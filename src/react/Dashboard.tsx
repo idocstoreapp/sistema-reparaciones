@@ -6,6 +6,7 @@ import OrderForm from "./components/OrderForm";
 import OrdersTable from "./components/OrdersTable";
 import WeeklyReport from "./components/WeeklyReport";
 import AdminDashboard from "./components/AdminDashboard";
+import EncargadoDashboard from "./components/EncargadoDashboard";
 
 function Header({ userName, userRole }: { userName: string; userRole: string }) {
   async function handleLogout() {
@@ -28,7 +29,7 @@ function Header({ userName, userRole }: { userName: string; userRole: string }) 
                 Registro de Servicios
               </h1>
               <p className="text-sm text-brand-white">
-                {userName} • {userRole === "admin" ? "Administrador" : "Técnico"}
+                {userName} • {userRole === "admin" ? "Administrador" : userRole === "encargado" ? "Encargado" : "Técnico"}
               </p>
             </div>
           </div>
@@ -167,7 +168,13 @@ export default function Dashboard() {
     <div>
       <Header userName={me.name} userRole={me.role} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {me.role === "admin" ? <AdminDashboard /> : <TechnicalView me={me} />}
+        {me.role === "admin" ? (
+          <AdminDashboard />
+        ) : me.role === "encargado" ? (
+          <EncargadoDashboard />
+        ) : (
+          <TechnicalView me={me} />
+        )}
       </div>
     </div>
   );

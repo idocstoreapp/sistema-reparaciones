@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { formatDate } from "@/lib/date";
-import type { Role, Profile } from "@/types";
+import type { Role, Profile, Branch } from "@/types";
 
 interface UserFormData {
   name: string;
@@ -12,6 +12,7 @@ interface UserFormData {
   password: string;
   role: Role;
   local: string;
+  sucursal_id: string;
 }
 
 interface ExtendedProfile extends Profile {
@@ -29,6 +30,7 @@ export default function UserManagement() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [formData, setFormData] = useState<UserFormData>({
     name: "",
     last_name: "",
@@ -37,6 +39,7 @@ export default function UserManagement() {
     password: "",
     role: "technician",
     local: "",
+    sucursal_id: "",
   });
 
   const [editFormData, setEditFormData] = useState<UserFormData>({
@@ -47,13 +50,23 @@ export default function UserManagement() {
     password: "",
     role: "technician",
     local: "",
+    sucursal_id: "",
   });
 
   const [newPassword, setNewPassword] = useState("");
 
   useEffect(() => {
     loadUsers();
+    loadBranches();
   }, []);
+
+  async function loadBranches() {
+    const { data } = await supabase
+      .from("branches")
+      .select("*")
+      .order("name");
+    if (data) setBranches(data);
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -123,6 +136,7 @@ export default function UserManagement() {
           last_name: formData.last_name.trim() || "",
           document_number: formData.document_number.trim() || "",
           local: formData.local.trim(),
+        sucursal_id: (formData.role === "technician" || formData.role === "encargado") && formData.sucursal_id ? formData.sucursal_id : null,
         },
       });
 
@@ -137,6 +151,7 @@ export default function UserManagement() {
         document_number: formData.document_number.trim() || null,
         email: formData.email.trim(),
         local: formData.local.trim(),
+        sucursal_id: (formData.role === "technician" || formData.role === "encargado") && formData.sucursal_id ? formData.sucursal_id : null,
       });
 
       if (userError) {
@@ -158,6 +173,7 @@ export default function UserManagement() {
         password: "",
         role: "technician",
         local: "",
+        sucursal_id: "",
       });
       await loadUsers();
       // Disparar evento para notificar a otros componentes (TechnicianPayments, AdminReports)
@@ -187,6 +203,7 @@ export default function UserManagement() {
           email: editFormData.email.trim(),
           role: editFormData.role,
           local: editFormData.local.trim(),
+          sucursal_id: (editFormData.role === "technician" || editFormData.role === "encargado") && editFormData.sucursal_id ? editFormData.sucursal_id : null,
         })
         .eq("id", editingUser.id);
 
@@ -291,6 +308,7 @@ export default function UserManagement() {
       password: "",
       role: user.role,
       local: user.local || "",
+      sucursal_id: user.sucursal_id || "",
     });
     setError(null);
     setSuccess(null);
@@ -343,6 +361,7 @@ export default function UserManagement() {
               <th className="py-3 px-2 font-semibold text-slate-700">Nombre</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Email</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Rol</th>
+              <th className="py-3 px-2 font-semibold text-slate-700">Sucursal</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Local</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Documento</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Creado</th>
@@ -352,7 +371,7 @@ export default function UserManagement() {
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-slate-500">
+                <td colSpan={8} className="py-8 text-center text-slate-500">
                   No hay usuarios registrados
                 </td>
               </tr>
@@ -368,11 +387,18 @@ export default function UserManagement() {
                       className={`px-2 py-1 rounded-full text-xs font-medium ${
                         user.role === "admin"
                           ? "bg-purple-100 text-purple-700"
+                          : user.role === "encargado"
+                          ? "bg-emerald-100 text-emerald-700"
                           : "bg-blue-100 text-blue-700"
                       }`}
                     >
-                      {user.role === "admin" ? "Admin" : "Técnico"}
+                      {user.role === "admin" ? "Admin" : user.role === "encargado" ? "Encargado" : "Técnico"}
                     </span>
+                  </td>
+                  <td className="py-3 px-2">
+                    {user.sucursal_id ? (
+                      branches.find(b => b.id === user.sucursal_id)?.name || "-"
+                    ) : "-"}
                   </td>
                   <td className="py-3 px-2">{user.local || "-"}</td>
                   <td className="py-3 px-2">{user.document_number || "-"}</td>
@@ -415,15 +441,16 @@ export default function UserManagement() {
           title="Crear Nuevo Usuario"
           onClose={() => {
             setIsCreateOpen(false);
-            setFormData({
-              name: "",
-              last_name: "",
-              document_number: "",
-              email: "",
-              password: "",
-              role: "technician",
-              local: "",
-            });
+      setFormData({
+        name: "",
+        last_name: "",
+        document_number: "",
+        email: "",
+        password: "",
+        role: "technician",
+        local: "",
+        sucursal_id: "",
+      });
             setError(null);
             setSuccess(null);
           }}
@@ -433,6 +460,7 @@ export default function UserManagement() {
               formData={formData}
               onChange={handleInputChange}
               showPassword={true}
+              branches={branches}
             />
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
               <button
@@ -470,6 +498,7 @@ export default function UserManagement() {
               formData={editFormData}
               onChange={handleEditInputChange}
               showPassword={false}
+              branches={branches}
             />
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
               <button
@@ -619,10 +648,12 @@ function FormFields({
   formData,
   onChange,
   showPassword,
+  branches = [],
 }: {
   formData: UserFormData;
   onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   showPassword: boolean;
+  branches?: Branch[];
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -721,9 +752,32 @@ function FormFields({
           required
         >
           <option value="technician">Técnico</option>
+          <option value="encargado">Encargado</option>
           <option value="admin">Administrador</option>
         </select>
       </div>
+
+      {(formData.role === "technician" || formData.role === "encargado") && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Sucursal *
+          </label>
+          <select
+            name="sucursal_id"
+            value={formData.sucursal_id}
+            onChange={onChange}
+            className="w-full border border-slate-300 rounded-md px-3 py-2"
+            required
+          >
+            <option value="">Selecciona una sucursal</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }
