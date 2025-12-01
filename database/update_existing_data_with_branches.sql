@@ -7,29 +7,43 @@
 
 -- 1. Asignar sucursal a usuarios técnicos existentes (si no tienen sucursal asignada)
 -- Distribuye los técnicos entre las 7 sucursales de forma equitativa
-UPDATE users
-SET sucursal_id = (
-  SELECT id FROM branches 
-  ORDER BY name 
-  LIMIT 1 OFFSET (
-    (ROW_NUMBER() OVER (ORDER BY created_at) - 1) % 7
-  )
+WITH numbered_technicians AS (
+  SELECT 
+    id,
+    (ROW_NUMBER() OVER (ORDER BY created_at) - 1) % 7 as branch_index
+  FROM users
+  WHERE role = 'technician' 
+    AND sucursal_id IS NULL
+),
+branches_ordered AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY name) - 1 as branch_index
+  FROM branches
 )
-WHERE role = 'technician' 
-  AND sucursal_id IS NULL;
+UPDATE users u
+SET sucursal_id = bo.id
+FROM numbered_technicians nt
+JOIN branches_ordered bo ON nt.branch_index = bo.branch_index
+WHERE u.id = nt.id;
 
 -- 2. Asignar sucursal a encargados existentes (si no tienen sucursal asignada)
 -- Distribuye los encargados entre las 7 sucursales de forma equitativa
-UPDATE users
-SET sucursal_id = (
-  SELECT id FROM branches 
-  ORDER BY name 
-  LIMIT 1 OFFSET (
-    (ROW_NUMBER() OVER (ORDER BY created_at) - 1) % 7
-  )
+WITH numbered_encargados AS (
+  SELECT 
+    id,
+    (ROW_NUMBER() OVER (ORDER BY created_at) - 1) % 7 as branch_index
+  FROM users
+  WHERE role = 'encargado' 
+    AND sucursal_id IS NULL
+),
+branches_ordered AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY name) - 1 as branch_index
+  FROM branches
 )
-WHERE role = 'encargado' 
-  AND sucursal_id IS NULL;
+UPDATE users u
+SET sucursal_id = bo.id
+FROM numbered_encargados ne
+JOIN branches_ordered bo ON ne.branch_index = bo.branch_index
+WHERE u.id = ne.id;
 
 -- 3. Asignar sucursal a órdenes existentes basándose en la sucursal del técnico
 UPDATE orders

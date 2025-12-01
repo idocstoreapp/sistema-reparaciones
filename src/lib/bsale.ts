@@ -218,6 +218,23 @@ export async function validateBsaleDocument(
 }
 
 /**
+ * Genera una URL de Bsale basada en el número de recibo
+ * Esta función intenta construir una URL válida incluso si no se ha validado el documento
+ */
+export function generateBsaleUrl(receiptNumber: string): string | null {
+  if (!receiptNumber || !receiptNumber.trim()) {
+    return null;
+  }
+
+  const apiUrl = import.meta.env.PUBLIC_BSALE_API_URL || "https://api.bsale.cl";
+  const baseDomain = apiUrl.includes("bsale.cl") ? "bsale.cl" : "bsale.io";
+  
+  // Intentar construir URL de búsqueda en Bsale
+  // Nota: Esta URL puede no funcionar directamente, pero es mejor que nada
+  return `https://www.${baseDomain}/document?number=${encodeURIComponent(receiptNumber.trim())}`;
+}
+
+/**
  * Verifica si un número de recibo ya está registrado en la base de datos
  */
 export async function checkReceiptNumberExists(

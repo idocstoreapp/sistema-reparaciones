@@ -105,12 +105,23 @@ export default function Dashboard() {
           .maybeSingle();
 
         if (profileError) {
+          console.error("Error al cargar perfil:", profileError);
+          console.error("Detalles del error:", {
+            message: profileError.message,
+            details: profileError.details,
+            hint: profileError.hint,
+            code: profileError.code,
+          });
           throw profileError;
         }
 
         if (!profile) {
+          console.error("Usuario autenticado pero sin perfil:", {
+            userId: user.id,
+            userEmail: user.email,
+          });
           setErrorMsg(
-            "No encontramos tu perfil en la tabla `users`. Asegúrate de que este usuario tenga un rol asignado en la base de datos."
+            `No encontramos tu perfil en la tabla 'users'. Tu ID de Authentication es: ${user.id}. Verifica en Supabase que existe un registro en la tabla 'users' con este mismo ID.`
           );
           return;
         }

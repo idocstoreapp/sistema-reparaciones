@@ -4,7 +4,7 @@ import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
-import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, type DuplicateInfo } from "@/lib/bsale";
+import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, generateBsaleUrl, type DuplicateInfo } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
 
@@ -986,7 +986,32 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       </div>
                     </td>
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
-                    <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px] truncate" title={o.service_description}>{o.service_description}</td>
+                    <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px]">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="truncate" title={o.service_description}>{o.service_description}</span>
+                        {o.receipt_number && (
+                          <span className="text-[10px] text-slate-500">
+                            Recibo: {o.bsale_url ? (
+                              <a
+                                href={o.bsale_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
+                                title="Abrir boleta en Bsale"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {o.receipt_number}
+                                <svg className="w-2.5 h-2.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            ) : (
+                              <span className="text-slate-600">{o.receipt_number}</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
@@ -1078,13 +1103,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       </div>
                     ) : o.receipt_number ? (
                       <div className="flex items-center gap-1">
-                        {o.bsale_url ? (
+                        {(o.bsale_url || generateBsaleUrl(o.receipt_number)) ? (
                           <a
-                            href={o.bsale_url}
+                            href={o.bsale_url || generateBsaleUrl(o.receipt_number) || "#"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
-                            title="Abrir boleta en Bsale (se abre en nueva pestaña)"
+                            title={o.bsale_url ? "Abrir boleta en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
                           >
                             {o.receipt_number}
                             <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

@@ -65,7 +65,7 @@ export default function AdminReports() {
       // Obtener todas las órdenes pagadas en ese rango (igual que en loadWeeklyReport)
       let ordersQuery = supabase
         .from("orders")
-        .select("id, technician_id, created_at, commission_amount, week_start, status, receipt_number")
+        .select("id, technician_id, created_at, commission_amount, week_start, status, receipt_number, bsale_url, bsale_number")
         .eq("status", "paid")
         .gte("created_at", startUTC.toISOString())
         .lte("created_at", endUTC.toISOString());
@@ -496,6 +496,7 @@ export default function AdminReports() {
                     <th className="py-2 px-2 font-semibold text-xs text-right">Repuesto</th>
                     <th className="py-2 px-2 font-semibold text-xs">Proveedor</th>
                     <th className="py-2 px-2 font-semibold text-xs">Método de Pago</th>
+                    <th className="py-2 px-2 font-semibold text-xs">N° Recibo</th>
                     <th className="py-2 px-2 font-semibold text-xs text-right">Comisión</th>
                     <th className="py-2 px-2 font-semibold text-xs">Estado</th>
                     <th className="py-2 px-2 font-semibold text-xs">Acciones</th>
@@ -534,6 +535,28 @@ export default function AdminReports() {
                         {(o as any).suppliers?.name || "-"}
                       </td>
                       <td className="py-2 px-2 text-xs">{o.payment_method || "-"}</td>
+                      <td className="py-2 px-2 text-xs">
+                        {o.receipt_number ? (
+                          o.bsale_url ? (
+                            <a
+                              href={o.bsale_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline font-medium flex items-center gap-1"
+                              title="Abrir boleta en Bsale (se abre en nueva pestaña)"
+                            >
+                              {o.receipt_number}
+                              <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          ) : (
+                            <span className="text-slate-700">{o.receipt_number}</span>
+                          )
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-xs font-semibold text-brand">
                         {formatCLP(o.commission_amount || 0)}
                       </td>
