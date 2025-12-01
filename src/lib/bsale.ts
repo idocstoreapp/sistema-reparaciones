@@ -20,6 +20,8 @@ interface BsaleDocument {
   id?: number;
   number?: string;
   url?: string;
+  urlPdf?: string | null; // URL del PDF del documento (según documentación de Bsale)
+  urlXml?: string | null; // URL del XML del documento
   total?: number;
   totalAmount?: number;
   [key: string]: any;
@@ -115,11 +117,24 @@ async function validateBsaleDocumentWithToken(
     const documentId = document.id || document.documentId;
     const total = document.totalAmount || document.total || document.amount || null;
     
-    // Construir URL del documento (puede variar según el país)
-    let documentUrl = document.url;
-    if (!documentUrl && documentId) {
-      const baseDomain = apiUrl.includes("bsale.cl") ? "bsale.cl" : "bsale.io";
-      documentUrl = `https://www.${baseDomain}/document/${documentId}`;
+    // Construir URL del documento PDF
+    // Según la documentación de Bsale (https://docs.bsale.dev/documentos-de-terceros),
+    // el campo 'urlPdf' contiene la URL del PDF del documento
+    let documentUrl: string | null = null;
+    
+    // Prioridad 1: Usar urlPdf si viene en la respuesta (campo oficial de Bsale)
+    if (document.urlPdf) {
+      documentUrl = document.urlPdf;
+    }
+    // Prioridad 2: Usar otros campos de URL si existen
+    else if (document.url || document.href || document.pdfUrl) {
+      documentUrl = document.url || document.href || document.pdfUrl || null;
+    }
+    // Prioridad 3: Construir la URL usando el ID del documento como fallback
+    else if (documentId) {
+      // Construir la URL del PDF usando el ID del documento
+      // Formato: https://api.bsale.cl/v1/documents/{id}.pdf?access_token={token}
+      documentUrl = `${apiUrl}/v1/documents/${documentId}.pdf?access_token=${accessToken}`;
     }
     
     return {
@@ -219,7 +234,9 @@ export async function validateBsaleDocument(
 
 /**
  * Genera una URL de Bsale basada en el número de recibo
- * Esta función intenta construir una URL válida incluso si no se ha validado el documento
+ * NOTA: Esta función solo genera una URL de búsqueda, no el PDF directo
+ * Para obtener el PDF real, se necesita validar el documento con validateBsaleDocument()
+ * que obtiene el documentId y construye la URL correcta del PDF
  */
 export function generateBsaleUrl(receiptNumber: string): string | null {
   if (!receiptNumber || !receiptNumber.trim()) {
@@ -229,9 +246,40 @@ export function generateBsaleUrl(receiptNumber: string): string | null {
   const apiUrl = import.meta.env.PUBLIC_BSALE_API_URL || "https://api.bsale.cl";
   const baseDomain = apiUrl.includes("bsale.cl") ? "bsale.cl" : "bsale.io";
   
-  // Intentar construir URL de búsqueda en Bsale
-  // Nota: Esta URL puede no funcionar directamente, pero es mejor que nada
+  // URL de búsqueda en Bsale (no es el PDF directo)
+  // Para obtener el PDF, se necesita validar primero con la API
   return `https://www.${baseDomain}/document?number=${encodeURIComponent(receiptNumber.trim())}`;
+}
+
+/**
+ * Construye la URL del PDF de un documento de Bsale usando el documentId
+ * @param documentId - ID del documento en Bsale
+ * @param accessToken - Token de acceso (opcional, si no se proporciona intenta usar los tokens configurados)
+ */
+export function buildBsalePdfUrl(documentId: number | string, accessToken?: string): string | null {
+  if (!documentId) {
+    return null;
+  }
+
+  const apiUrl = import.meta.env.PUBLIC_BSALE_API_URL || "https://api.bsale.cl";
+  
+  // Si no se proporciona token, intentar obtener el primero de los configurados
+  let token = accessToken;
+  if (!token) {
+    const tokens = getBsaleTokens();
+    if (tokens.length > 0) {
+      token = tokens[0];
+    }
+  }
+  
+  if (!token) {
+    // Sin token, no podemos construir la URL del PDF
+    return null;
+  }
+  
+  // URL del PDF del documento en Bsale
+  // Formato: https://api.bsale.cl/v1/documents/{id}.pdf?access_token={token}
+  return `${apiUrl}/v1/documents/${documentId}.pdf?access_token=${token}`;
 }
 
 /**

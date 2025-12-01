@@ -393,6 +393,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       updateData.receipt_number = editReceipt.trim();
       updateData.bsale_number = bsaleData?.number || null;
       updateData.bsale_url = bsaleData?.url || null;
+      updateData.bsale_id = bsaleData?.id || null; // ID del documento para construir URL del PDF
       updateData.bsale_total_amount = bsaleData?.totalAmount || null;
 
       // Si se proporcionó una fecha de recibo, verificar si es diferente a la fecha original
@@ -991,13 +992,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                         <span className="truncate" title={o.service_description}>{o.service_description}</span>
                         {o.receipt_number && (
                           <span className="text-[10px] text-slate-500">
-                            Recibo: {o.bsale_url ? (
+                            Recibo: {(o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id))) ? (
                               <a
-                                href={o.bsale_url}
+                                href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || "#"}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
-                                title="Abrir boleta en Bsale"
+                                title="Abrir PDF de la factura en Bsale"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {o.receipt_number}
@@ -1103,13 +1104,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       </div>
                     ) : o.receipt_number ? (
                       <div className="flex items-center gap-1">
-                        {(o.bsale_url || generateBsaleUrl(o.receipt_number)) ? (
+                        {(o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id)) || generateBsaleUrl(o.receipt_number)) ? (
                           <a
-                            href={o.bsale_url || generateBsaleUrl(o.receipt_number) || "#"}
+                            href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || generateBsaleUrl(o.receipt_number) || "#"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
-                            title={o.bsale_url ? "Abrir boleta en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
+                            title={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) ? "Abrir PDF de la factura en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
                           >
                             {o.receipt_number}
                             <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

@@ -205,6 +205,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         // Campos de Bsale: extraídos automáticamente al validar el recibo
         bsale_number: bsaleData?.number || null,
         bsale_url: bsaleData?.url || null,
+        bsale_id: bsaleData?.id || null, // ID del documento para construir URL del PDF
         bsale_total_amount: bsaleData?.totalAmount || null,
         // Campo de sucursal: heredado del técnico
         sucursal_id: technician?.sucursal_id || null,

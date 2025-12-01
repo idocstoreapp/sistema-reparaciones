@@ -12,6 +12,7 @@ import TechnicianPayments from "./TechnicianPayments";
 import SupplierPurchases from "./SupplierPurchases";
 import UserManagement from "./UserManagement";
 import BranchManagement from "./BranchManagement";
+import UpdateBsaleUrls from "./UpdateBsaleUrls";
 
 export default function AdminDashboard() {
   const [kpis, setKpis] = useState({
@@ -244,6 +245,13 @@ export default function AdminDashboard() {
             <BranchManagement key={refreshKey} />
           </div>
         )}
+      </div>
+
+      {/* Card para Actualizar URLs de Bsale */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="border-t border-slate-200 p-6">
+          <UpdateBsaleUrls />
+        </div>
       </div>
 
       <OrdersTable isAdmin={true} onUpdate={refreshKPIs} />

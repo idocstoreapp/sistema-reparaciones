@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
+import { buildBsalePdfUrl } from "@/lib/bsale";
 import type { Order, Profile } from "@/types";
 
 export default function AdminReports() {
@@ -537,13 +538,13 @@ export default function AdminReports() {
                       <td className="py-2 px-2 text-xs">{o.payment_method || "-"}</td>
                       <td className="py-2 px-2 text-xs">
                         {o.receipt_number ? (
-                          o.bsale_url ? (
+                          (o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id))) ? (
                             <a
-                              href={o.bsale_url}
+                              href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || "#"}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:text-blue-800 hover:underline font-medium flex items-center gap-1"
-                              title="Abrir boleta en Bsale (se abre en nueva pestaña)"
+                              title="Abrir PDF de la factura en Bsale (se abre en nueva pestaña)"
                             >
                               {o.receipt_number}
                               <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

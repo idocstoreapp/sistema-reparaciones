@@ -38,6 +38,7 @@ export interface Order {
   // Campos de Bsale - extraídos automáticamente al validar el recibo
   bsale_number?: string | null;
   bsale_url?: string | null;
+  bsale_id?: number | null; // ID del documento en Bsale (necesario para construir URL del PDF)
   bsale_total_amount?: number | null;
   // Campo de sucursal
   sucursal_id?: string | null;
