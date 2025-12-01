@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { currentMonthRange, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
+import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 import OrdersTable from "./OrdersTable";
@@ -32,12 +33,15 @@ export default function AdminDashboard() {
       const { start: monthStart, end: monthEnd } = currentMonthRange();
       const { start: weekStart, end: weekEnd } = currentWeekRange();
 
-      // Cargar todas las órdenes del mes
+      // ⚠️ CAMBIO CRÍTICO: Para el mes, usar paid_at para órdenes pagadas (retrocompatibilidad)
+      // Las órdenes pendientes se filtran por created_at ya que aún no tienen paid_at
+      const currentPayout = getCurrentPayoutWeek();
+      
+      // Cargar órdenes del mes: pagadas por paid_at, pendientes por created_at
       const { data: allOrders } = await supabase
         .from("orders")
         .select("*")
-        .gte("created_at", monthStart.toISOString())
-        .lte("created_at", monthEnd.toISOString());
+        .or(`and(status.eq.paid,paid_at.gte.${monthStart.toISOString()},paid_at.lte.${monthEnd.toISOString()}),and(status.eq.pending,created_at.gte.${monthStart.toISOString()},created_at.lte.${monthEnd.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${monthStart.toISOString()},created_at.lte.${monthEnd.toISOString()})`);
 
       if (allOrders) {
         // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas
@@ -66,13 +70,14 @@ export default function AdminDashboard() {
             return s + (r.commission_amount ?? 0);
           }, 0);
         // Compras de la semana actual (pagadas, con proveedor)
+        // ⚠️ CAMBIO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
         const purchases = paidOrders
           .filter(
             (r) =>
               (r.replacement_cost ?? 0) > 0 &&
               r.supplier_id &&
-              new Date(r.created_at) >= weekStart &&
-              new Date(r.created_at) <= weekEnd
+              r.payout_week === currentPayout.week &&
+              r.payout_year === currentPayout.year
           )
           .reduce((s, r) => s + (r.replacement_cost ?? 0), 0);
 

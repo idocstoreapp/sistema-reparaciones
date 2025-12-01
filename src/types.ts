@@ -25,6 +25,14 @@ export interface Order {
   receipt_number?: string | null;
   status: "pending" | "paid" | "returned" | "cancelled";
   commission_amount: number;
+  // Campos de semana de pago - se asignan cuando status = 'paid' y nunca se recalculan
+  paid_at?: string | null; // Fecha en que la orden fue pagada
+  payout_week?: number | null; // Número de semana (1-53) en que fue pagada
+  payout_year?: number | null; // Año en que fue pagada
+  // Campos legacy (mantenidos para retrocompatibilidad, basados en created_at)
+  week_start?: string | null;
+  month?: number | null;
+  year?: number | null;
 }
 
 export interface OrderNote {

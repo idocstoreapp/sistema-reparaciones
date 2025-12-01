@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { calcCommission } from "@/lib/commission";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
+import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
 
@@ -126,6 +127,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     const [year, month, day] = orderDate.split('-').map(Number);
     const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
 
+    // ⚠️ CAMBIO CRÍTICO: Si la orden se crea con recibo (status = 'paid'),
+    // establecer paid_at, payout_week y payout_year basándose en la fecha actual
+    // Estos campos se fijan permanentemente y nunca se recalculan
+    const now = new Date();
+    const paidAt = status === "paid" ? now.toISOString() : null;
+    const payoutWeek = status === "paid" ? calculatePayoutWeek(now) : null;
+    const payoutYear = status === "paid" ? calculatePayoutYear(now) : null;
+
     // Guardar la orden - medio de pago y recibo son opcionales
     // payment_method no puede ser null, usar cadena vacía '' si no hay medio de pago
     const { data: createdOrder, error } = await supabase
@@ -143,6 +152,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         status,
         commission_amount: commission, // Si no hay medio de pago, será 0
         created_at: createdAt.toISOString(),
+        // Campos de semana de pago: se asignan cuando status = 'paid'
+        paid_at: paidAt,
+        payout_week: payoutWeek,
+        payout_year: payoutYear,
       })
       .select()
       .maybeSingle();

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
+import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, SalaryAdjustment, Order, SalarySettlement } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
 
@@ -105,6 +106,8 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
     if (technicians.length === 0) return;
       const { start, end } = currentWeekRange();
     const weekStartISO = start.toISOString().slice(0, 10);
+      // ⚠️ CAMBIO CRÍTICO: Usar payout_week/payout_year para filtrar órdenes pagadas
+      const currentPayout = getCurrentPayoutWeek();
       const totals: Record<string, number> = {};
       const adjustmentTotals: Record<string, number> = {};
       const returnsTotals: Record<string, number> = {};
@@ -123,8 +126,9 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
           .select("commission_amount")
           .eq("technician_id", tech.id)
           .eq("status", "paid") // Solo órdenes pagadas, excluyendo devueltas y canceladas
-          .gte("created_at", start.toISOString())
-              .lte("created_at", end.toISOString()),
+          // ⚠️ CAMBIO: Filtrar por payout_week/payout_year en lugar de created_at
+          .eq("payout_week", currentPayout.week)
+          .eq("payout_year", currentPayout.year),
             supabase
               .from("salary_adjustments")
             .select("amount, available_from, created_at")

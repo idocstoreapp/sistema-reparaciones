@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
+import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
 import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
@@ -336,6 +337,17 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     // Si hay recibo, marcar como pagada; si no, mantener el estado actual o "pending"
     const newStatus = hasReceipt ? "paid" : (currentOrder.status || "pending");
 
+    // ⚠️ CAMBIO CRÍTICO: Si estamos marcando como pagada por primera vez, establecer paid_at, payout_week y payout_year
+    // Estos campos se fijan permanentemente y nunca se recalculan después
+    const now = new Date();
+    const isMarkingAsPaid = newStatus === "paid" && currentOrder.status !== "paid";
+    const paidAt = isMarkingAsPaid ? now.toISOString() : (currentOrder.paid_at || null);
+    const payoutWeek = isMarkingAsPaid ? calculatePayoutWeek(now) : (currentOrder.payout_week || null);
+    const payoutYear = isMarkingAsPaid ? calculatePayoutYear(now) : (currentOrder.payout_year || null);
+
+    // Si se está quitando el estado de pagada, limpiar los campos de payout
+    const shouldClearPayoutFields = newStatus !== "paid" && currentOrder.status === "paid";
+    
     const updateData: {
       payment_method: string;
       status: string;
@@ -344,10 +356,16 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       bsale_number?: string | null;
       bsale_url?: string | null;
       bsale_total_amount?: number | null;
+      paid_at?: string | null;
+      payout_week?: number | null;
+      payout_year?: number | null;
     } = {
       payment_method: paymentMethodToUse || '', // Usar '' en lugar de null (NOT NULL constraint)
       status: newStatus,
       commission_amount: newCommission,
+      paid_at: shouldClearPayoutFields ? null : paidAt,
+      payout_week: shouldClearPayoutFields ? null : payoutWeek,
+      payout_year: shouldClearPayoutFields ? null : payoutYear,
     };
 
     // Solo actualizar recibo si se proporciona

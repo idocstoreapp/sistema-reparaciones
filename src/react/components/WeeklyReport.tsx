@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
+import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import type { SalaryAdjustment, Order } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
@@ -51,14 +52,18 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
     try {
       const { start, end } = currentWeekRange();
       const weekStartISO = start.toISOString().slice(0, 10);
+      
+      // ⚠️ CAMBIO CRÍTICO: Usar payout_week y payout_year en lugar de created_at
+      // Las órdenes se asignan a una semana según cuando fueron pagadas, no cuando fueron creadas
+      const currentPayout = getCurrentPayoutWeek();
 
       const [{ data: orders }, { data: adjustmentData }, { data: settlementsData }] = await Promise.all([
         supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
+        // Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
+        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()})`)
           .order("created_at", { ascending: false }),
         supabase
           .from("salary_adjustments")
@@ -104,13 +109,18 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         const returned = orders.filter((o) => o.status === "returned" || o.status === "cancelled");
         const returnsDiscount = returned.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
 
+        // Última orden pagada: usar paid_at si existe, sino created_at (retrocompatibilidad)
         const lastPaid = orders
           .filter((o) => o.status === "paid" && o.receipt_number)
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+          .sort((a, b) => {
+            const dateA = a.paid_at ? new Date(a.paid_at) : new Date(a.created_at);
+            const dateB = b.paid_at ? new Date(b.paid_at) : new Date(b.created_at);
+            return dateB.getTime() - dateA.getTime();
+          })[0];
 
         setTotalEarned(earned);
         setTotalPending(pending);
-        setLastPayment(lastPaid ? formatDate(lastPaid.created_at) : null);
+        setLastPayment(lastPaid ? formatDate(lastPaid.paid_at || lastPaid.created_at) : null);
         // Guardar el descuento por devoluciones en el estado
         setReturnsDiscount(returnsDiscount);
         setReturnedOrders(returned);

@@ -7,6 +7,7 @@ import type { Order, Supplier } from "@/types";
 interface PurchaseRecord {
   id: string;
   created_at: string;
+  paid_at?: string | null;
   order_number: string;
   supplier_name: string;
   supplier_id: string | null;
@@ -85,13 +86,14 @@ export default function SupplierPurchases() {
     }
 
     // Construir query
-    // IMPORTANTE: Usar los mismos criterios que AdminDashboard
-    // Solo contar órdenes pagadas (status = 'paid'), excluyendo devueltas y canceladas
+    // ⚠️ CAMBIO CRÍTICO: Para órdenes pagadas, usar paid_at en lugar de created_at
+    // Las compras a proveedores deben contar según cuando se pagó la orden, no cuando se creó
     let query = supabase
       .from("orders")
       .select(`
         id,
         created_at,
+        paid_at,
         order_number,
         replacement_cost,
         device,
@@ -103,12 +105,13 @@ export default function SupplierPurchases() {
           name
         )
       `)
-      .gte("created_at", dateStart.toISOString())
-      .lte("created_at", dateEnd.toISOString())
       .eq("status", "paid") // Solo órdenes pagadas (como en AdminDashboard)
       .gt("replacement_cost", 0) // Solo órdenes con compras a proveedores
       .not("supplier_id", "is", null) // Solo órdenes con proveedor asignado
-      .order("created_at", { ascending: false });
+      // ⚠️ CAMBIO: Filtrar por paid_at para órdenes pagadas (cuando fue pagada, no cuando fue creada)
+      // Retrocompatibilidad: Si paid_at es null, usar created_at
+      .or(`and(paid_at.gte.${dateStart.toISOString()},paid_at.lte.${dateEnd.toISOString()}),and(paid_at.is.null,created_at.gte.${dateStart.toISOString()},created_at.lte.${dateEnd.toISOString()})`)
+      .order("paid_at", { ascending: false, nullsFirst: false });
 
     // Aplicar filtro de proveedor
     if (selectedSupplier !== "all") {
@@ -124,6 +127,7 @@ export default function SupplierPurchases() {
       const purchasesData: PurchaseRecord[] = (data || []).map((order: any) => ({
         id: order.id,
         created_at: order.created_at,
+        paid_at: order.paid_at,
         order_number: order.order_number,
         supplier_name: order.suppliers?.name || "Sin proveedor",
         supplier_id: order.supplier_id,
@@ -427,7 +431,7 @@ export default function SupplierPurchases() {
                   key={purchase.id}
                   className="border-b border-slate-100 hover:bg-slate-50"
                 >
-                  <td className="py-3 px-2">{formatDate(purchase.created_at)}</td>
+                  <td className="py-3 px-2">{formatDate(purchase.paid_at || purchase.created_at)}</td>
                   <td className="py-3 px-2 font-medium text-slate-900">
                     {purchase.order_number}
                   </td>

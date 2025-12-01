@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { currentWeekRange, currentMonthRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
+import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 
@@ -25,26 +26,32 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
+    async function loadData() {
       setLoading(true);
-      const { start, end } = currentWeekRange();
-      const { start: ms, end: me } = currentMonthRange();
-
-      // Consulta para órdenes de la semana
+      
+      // ⚠️ CAMBIO CRÍTICO: Usar payout_week y payout_year en lugar de created_at
+      // Las comisiones se asignan según la fecha de pago, no la fecha de creación
+      const currentPayout = getCurrentPayoutWeek();
+      
+      // Consulta para órdenes pagadas de la semana actual (basado en payout_week)
+      // Solo órdenes que fueron pagadas esta semana según su payout_week/payout_year
       const { data: week, error: weekError } = await supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+        .eq("status", "paid") // Solo órdenes pagadas tienen payout_week
+        .eq("payout_week", currentPayout.week)
+        .eq("payout_year", currentPayout.year);
 
-      // Consulta para órdenes del mes
+      // Consulta para órdenes pagadas del mes actual
+      // Usar paid_at para filtrar por mes (retrocompatibilidad: órdenes sin payout_week usan paid_at)
       const { data: month, error: monthError } = await supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
-        .gte("created_at", ms.toISOString())
-        .lte("created_at", me.toISOString());
+        .eq("status", "paid")
+        .gte("paid_at", ms.toISOString())
+        .lte("paid_at", me.toISOString());
 
       // Consulta para total histórico de devoluciones/cancelaciones (sin límite de tiempo)
       const { data: totalReturns, error: totalReturnsError } = await supabase
@@ -88,22 +95,37 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       const monthOrders = month ?? [];
       const adjustmentsList = weeklyAdjustments ?? [];
 
-      // Contar todas las órdenes de la semana (con y sin recibo)
+      // Contar todas las órdenes pagadas de la semana actual (basado en payout_week)
+      // ⚠️ CAMBIO: Ahora solo cuenta órdenes con payout_week/payout_year de la semana actual
       const count = weekOrders.length;
       
-      // Ganancia semanal: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
-      const weekGain = weekOrders
-        .filter((r) => r.status === "paid")
-        .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
+      // Ganancia semanal: suma de comisiones de órdenes pagadas en la semana actual
+      // Estas órdenes tienen payout_week y payout_year que coinciden con la semana actual
+      // La semana se fija cuando la orden se marca como pagada y nunca cambia
+      const weekGain = weekOrders.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
-      // Pendientes: calcular el TOTAL de todas las órdenes pendientes (sin límite de fecha)
-      // Suma total del dinero que falta por recibir por órdenes sin recibo
+      // Pendientes: calcular el TOTAL de todas las órdenes sin recibo/boleta (sin límite de fecha)
+      // Suma total de comisiones de órdenes que están pendientes (status = 'pending')
+      // Cuando se agrega el recibo manualmente, estas órdenes pasan a status = 'paid'
+      // y se suman en "Ganancia Semanal (Con Recibo)"
       // Recalcular comisión para cada orden pendiente basándose en el medio de pago actual
       // (puede que hayan agregado el medio de pago después de crear la orden)
       const allPending = allPendingOrders ?? [];
+      
+      // Debug: mostrar órdenes pendientes encontradas
+      if (allPending.length > 0) {
+        console.log(`[WeeklySummary] Encontradas ${allPending.length} órdenes pendientes:`, allPending.map(o => ({
+          order_number: o.order_number,
+          payment_method: o.payment_method,
+          repair_cost: o.repair_cost,
+          replacement_cost: o.replacement_cost,
+          commission_amount: o.commission_amount
+        })));
+      }
+      
       const pending = allPending.reduce((s, r) => {
-        // Si la orden tiene medio de pago, recalcular la comisión
-        // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
+        // Si la orden tiene medio de pago, recalcular la comisión basándose en precio y método
+        // Si no tiene medio de pago, usar la comisión almacenada (será 0 hasta que se agregue medio de pago)
         const paymentMethod = (r.payment_method as PaymentMethod) || "";
         if (paymentMethod) {
           const recalculatedCommission = calcCommission({
@@ -111,16 +133,20 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
             costoRepuesto: r.replacement_cost ?? 0,
             precioTotal: r.repair_cost ?? 0,
           });
+          console.log(`[WeeklySummary] Orden ${r.order_number}: comisión recalculada = ${recalculatedCommission} (método: ${paymentMethod}, precio: ${r.repair_cost}, repuesto: ${r.replacement_cost})`);
           return s + recalculatedCommission;
         }
-        // Si no hay medio de pago, usar la comisión almacenada
+        // Si no hay medio de pago, usar la comisión almacenada (probablemente 0)
+        // La comisión será 0 hasta que se agregue el medio de pago
+        console.log(`[WeeklySummary] Orden ${r.order_number}: sin medio de pago, comisión almacenada = ${r.commission_amount ?? 0}`);
         return s + (r.commission_amount ?? 0);
       }, 0);
       
-      // Total del mes: solo órdenes con recibo (pagadas), excluyendo devueltas y canceladas
-      const monthGain = monthOrders
-        .filter((r) => r.status === "paid")
-        .reduce((s, r) => s + (r.commission_amount ?? 0), 0);
+      console.log(`[WeeklySummary] Total pendiente calculado: ${pending}`);
+      
+      // Total del mes: suma de comisiones de órdenes pagadas del mes actual
+      // Basado en payout_year y filtrado por paid_at para retrocompatibilidad
+      const monthGain = monthOrders.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
 
       // Contar devoluciones y cancelaciones (garantías) de la semana
       const returnsAndCancellations = weekOrders.filter(
@@ -148,7 +174,19 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       });
       setLoading(false);
     }
-    load();
+    
+    loadData();
+    
+    // Escuchar evento de actualización de órdenes
+    const handleOrderUpdated = () => {
+      void loadData();
+    };
+    
+    window.addEventListener('orderUpdated', handleOrderUpdated);
+    
+    return () => {
+      window.removeEventListener('orderUpdated', handleOrderUpdated);
+    };
   }, [technicianId, refreshKey]);
 
   if (loading) {
@@ -195,7 +233,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
           <>
             <span>${formatCLP(kpis.pending)}</span>
             <span className="block text-xs font-normal text-slate-500 mt-1">
-              Total por falta de recibo
+              Órdenes sin recibo/boleta
             </span>
           </>
         }

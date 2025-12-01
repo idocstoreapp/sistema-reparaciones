@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
+import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, Profile } from "@/types";
 
 export default function AdminReports() {
@@ -42,15 +43,21 @@ export default function AdminReports() {
   // Función para cargar reporte semanal (reutilizable con useCallback)
   const loadWeeklyReport = useCallback(async () => {
     setLoading(true);
+    // ⚠️ CAMBIO CRÍTICO: Calcular payout_week y payout_year para la semana seleccionada
+    // La semana seleccionada determina qué órdenes pagadas mostrar
     const { start, end } = currentWeekRange(weekStart);
+    const selectedPayoutWeek = calculatePayoutWeek(weekStart);
+    const selectedPayoutYear = calculatePayoutYear(weekStart);
 
     let q = supabase
       .from("orders")
       .select("*, technician:users!technician_id(name)")
       .eq("status", "paid") // Solo órdenes pagadas (con recibo), excluyendo devueltas y canceladas
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString())
-      .order("created_at", { ascending: false });
+      // ⚠️ CAMBIO: Filtrar por payout_week/payout_year en lugar de created_at
+      // Esto muestra órdenes que fueron pagadas en la semana seleccionada, no creadas
+      // Retrocompatibilidad: Si payout_week es null, usar paid_at como fallback
+      .or(`and(payout_week.eq.${selectedPayoutWeek ?? 0},payout_year.eq.${selectedPayoutYear ?? new Date().getFullYear()}),and(payout_week.is.null,paid_at.gte.${start.toISOString()},paid_at.lte.${end.toISOString()})`)
+      .order("paid_at", { ascending: false, nullsFirst: false });
 
     if (selectedTechnician !== "all") {
       q = q.eq("technician_id", selectedTechnician);
