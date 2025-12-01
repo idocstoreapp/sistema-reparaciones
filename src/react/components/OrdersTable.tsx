@@ -317,22 +317,24 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
     
     if (hasReceipt) {
-      // Intentar validar con Bsale, pero no bloquear si falla
+      // ⚠️ VALIDACIÓN OBLIGATORIA: Validar con Bsale y bloquear si la factura no existe
       try {
-        const bsaleValidation = await validateBsaleDocument(editReceipt.trim());
+        const bsaleValidation = await validateBsaleDocument(editReceipt.trim(), true);
         
-        // Solo usar datos de Bsale si la validación fue exitosa
-        if (bsaleValidation.exists && bsaleValidation.document) {
-          bsaleData = bsaleValidation.document;
-        } else {
-          // Si no existe o hay error, solo registrar en consola pero continuar
-          if (bsaleValidation.error) {
-            console.warn("Bsale validation skipped:", bsaleValidation.error);
-          }
+        // Si la validación falla, mostrar error y bloquear la actualización
+        if (!bsaleValidation.exists || !bsaleValidation.document) {
+          const errorMessage = bsaleValidation.error || "El número de factura no existe en Bsale. Por favor, verifica que el número sea correcto.";
+          alert(`❌ ${errorMessage}`);
+          return;
         }
+        
+        // Si la validación fue exitosa, usar los datos de Bsale
+        bsaleData = bsaleValidation.document;
       } catch (error) {
-        // Si hay cualquier error, continuar sin validación
-        console.warn("Bsale validation error, continuing without validation:", error);
+        // Si hay un error de conexión, mostrar mensaje y bloquear
+        const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+        alert(`❌ Error al validar la factura con Bsale: ${errorMessage}\n\nPor favor, verifica tu conexión a internet e intenta nuevamente.`);
+        return;
       }
 
       // Verificar duplicados en la base de datos solo si hay recibo (excluyendo la orden actual)

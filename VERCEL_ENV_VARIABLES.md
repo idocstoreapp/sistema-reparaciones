@@ -34,14 +34,22 @@ Estas variables son opcionales pero habilitan funcionalidades adicionales:
 - **Formato**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
 - **Nota**: En producción, considera usar Edge Functions en lugar de exponer esta clave en el frontend, pero para la mayoría de casos, configurarla en Vercel es suficiente.
 
-### 4. `PUBLIC_BSALE_ACCESS_TOKEN`
-- **Descripción**: Token de acceso para la API de Bsale (validación de boletas)
+### 4. `PUBLIC_BSALE_ACCESS_TOKEN` (Token único - Opcional)
+- **Descripción**: Token de acceso único para la API de Bsale (validación de boletas)
 - **Dónde obtenerla**: 
   - **Sandbox**: Crea una cuenta en https://www.bsale.cl
   - **Producción**: Envía correo a [email protected] desde cuenta de administrador
 - **Formato**: String alfanumérico
 - **Ejemplo**: `e4f3c1cfb632f5b8f3521489863d4a9ccd6a7cd5`
-- **Nota**: Si no se configura, la validación de boletas no funcionará pero la app seguirá funcionando.
+- **Nota**: Usa esta opción si solo necesitas validar con una empresa. Para múltiples empresas, usa `PUBLIC_BSALE_ACCESS_TOKENS` en su lugar.
+
+### 4b. `PUBLIC_BSALE_ACCESS_TOKENS` (Múltiples tokens - Recomendado)
+- **Descripción**: Múltiples tokens de acceso para la API de Bsale, separados por coma. Permite validar facturas de varias empresas.
+- **Formato**: String con tokens separados por coma (sin espacios o con espacios que se eliminarán automáticamente)
+- **Ejemplo**: `token1,token2,token3`
+- **Ejemplo real**: `b2d5a1042405501fa165cd625919a9d4f531f6ce,0680bbf2719463d3b40ca4b0d5ed998f38ee3f79`
+- **Nota**: Si se configura esta variable, el sistema intentará validar con todos los tokens hasta encontrar la factura. Si no se encuentra en ninguno, bloqueará el guardado.
+- **Ver**: `CONFIGURACION_BSALE_TOKENS.md` para más detalles sobre la configuración de múltiples empresas.
 
 ### 5. `PUBLIC_BSALE_API_URL`
 - **Descripción**: URL base de la API de Bsale (opcional, tiene valor por defecto)
@@ -83,7 +91,9 @@ vercel login
 vercel env add PUBLIC_SUPABASE_URL production
 vercel env add PUBLIC_SUPABASE_ANON_KEY production
 vercel env add PUBLIC_SUPABASE_SERVICE_ROLE_KEY production
-vercel env add PUBLIC_BSALE_ACCESS_TOKEN production
+vercel env add PUBLIC_BSALE_ACCESS_TOKENS production
+# O si solo usas un token:
+# vercel env add PUBLIC_BSALE_ACCESS_TOKEN production
 vercel env add PUBLIC_BSALE_API_URL production
 ```
 
@@ -96,7 +106,8 @@ Antes de hacer deploy, verifica que tengas:
 - [ ] `PUBLIC_SUPABASE_URL` configurada (OBLIGATORIA)
 - [ ] `PUBLIC_SUPABASE_ANON_KEY` configurada (OBLIGATORIA)
 - [ ] `PUBLIC_SUPABASE_SERVICE_ROLE_KEY` configurada (OBLIGATORIA si necesitas gestionar usuarios - crear, editar, eliminar)
-- [ ] `PUBLIC_BSALE_ACCESS_TOKEN` configurada (opcional - solo si necesitas validar boletas)
+- [ ] `PUBLIC_BSALE_ACCESS_TOKENS` configurada (opcional - para validar boletas de múltiples empresas)
+  - O `PUBLIC_BSALE_ACCESS_TOKEN` si solo necesitas una empresa
 - [ ] `PUBLIC_BSALE_API_URL` configurada (opcional - solo si es diferente a la por defecto)
 
 **⚠️ Recordatorio:** Si agregas o modificas variables de entorno en Vercel, **debes hacer redeploy** para que los cambios surtan efecto.
@@ -123,7 +134,7 @@ Antes de hacer deploy, verifica que tengas:
 ### ✅ Variables Seguras para Frontend (PUBLIC_*)
 - `PUBLIC_SUPABASE_URL` - Es pública, no contiene información sensible
 - `PUBLIC_SUPABASE_ANON_KEY` - Es pública, tiene restricciones de RLS
-- `PUBLIC_BSALE_ACCESS_TOKEN` - Es pública pero limita el acceso a tu cuenta de Bsale
+- `PUBLIC_BSALE_ACCESS_TOKEN` / `PUBLIC_BSALE_ACCESS_TOKENS` - Es pública pero limita el acceso a tu cuenta de Bsale
 - `PUBLIC_BSALE_API_URL` - Es pública
 
 ### ⚠️ Variable Sensible
@@ -137,7 +148,7 @@ Antes de hacer deploy, verifica que tengas:
 PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
 PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTYxNjIzOTAyMiwiZXhwIjoxOTMxODE1MDIyfQ.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 PUBLIC_SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNjE2MjM5MDIyLCJleHAiOjE5MzE4MTUwMjJ9.yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-PUBLIC_BSALE_ACCESS_TOKEN=e4f3c1cfb632f5b8f3521489863d4a9ccd6a7cd5
+PUBLIC_BSALE_ACCESS_TOKENS=b2d5a1042405501fa165cd625919a9d4f531f6ce,0680bbf2719463d3b40ca4b0d5ed998f38ee3f79
 PUBLIC_BSALE_API_URL=https://api.bsale.cl
 ```
 
@@ -153,9 +164,10 @@ PUBLIC_BSALE_API_URL=https://api.bsale.cl
 - Si necesitas crear usuarios, agrega `PUBLIC_SUPABASE_SERVICE_ROLE_KEY`
 - O simplemente ignora este error si no necesitas esa funcionalidad
 
-### Error: "Token de Bsale no configurado"
+### Error: "Token de Bsale no configurado" o "Tokens de Bsale no configurados"
 - Si no necesitas validar boletas, puedes ignorar este error
-- Si lo necesitas, agrega `PUBLIC_BSALE_ACCESS_TOKEN`
+- Si lo necesitas, agrega `PUBLIC_BSALE_ACCESS_TOKENS` (múltiples empresas) o `PUBLIC_BSALE_ACCESS_TOKEN` (una empresa)
+- Ver `CONFIGURACION_BSALE_TOKENS.md` para más detalles sobre la configuración de múltiples tokens
 
 ---
 

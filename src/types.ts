@@ -34,6 +34,10 @@ export interface Order {
   week_start?: string | null;
   month?: number | null;
   year?: number | null;
+  // Campos de Bsale - extraídos automáticamente al validar el recibo
+  bsale_number?: string | null;
+  bsale_url?: string | null;
+  bsale_total_amount?: number | null;
 }
 
 export interface OrderNote {

@@ -7,7 +7,10 @@
  *   solicitando un token de producción para acceder a las boletas reales del cliente.
  * 
  * Agrega en tu archivo .env:
- * PUBLIC_BSALE_ACCESS_TOKEN=tu_token_aqui
+ * PUBLIC_BSALE_ACCESS_TOKEN=token_principal (o usa PUBLIC_BSALE_ACCESS_TOKENS para múltiples tokens separados por coma)
+ * 
+ * Para múltiples empresas, puedes usar:
+ * PUBLIC_BSALE_ACCESS_TOKENS=token1,token2,token3
  * 
  * También puedes configurar la URL base (opcional, por defecto usa api.bsale.cl):
  * PUBLIC_BSALE_API_URL=https://api.bsale.cl (o https://api.bsale.io según tu país)
@@ -30,36 +33,34 @@ interface BsaleResponse {
 }
 
 /**
- * Valida si un número de boleta existe en Bsale
- * @param receiptNumber - Número de boleta a validar
- * @returns Objeto con información del documento si existe, null si no existe
+ * Obtiene los tokens de Bsale configurados
+ * Soporta tanto un solo token como múltiples tokens separados por coma
  */
-export async function validateBsaleDocument(
-  receiptNumber: string
+function getBsaleTokens(): string[] {
+  // Primero intentar con múltiples tokens (separados por coma)
+  const multipleTokens = import.meta.env.PUBLIC_BSALE_ACCESS_TOKENS;
+  if (multipleTokens) {
+    return multipleTokens.split(',').map(token => token.trim()).filter(token => token.length > 0);
+  }
+  
+  // Si no hay múltiples tokens, usar el token único
+  const singleToken = import.meta.env.PUBLIC_BSALE_ACCESS_TOKEN;
+  if (singleToken) {
+    return [singleToken];
+  }
+  
+  return [];
+}
+
+/**
+ * Valida un documento con un token específico
+ */
+async function validateBsaleDocumentWithToken(
+  receiptNumber: string,
+  accessToken: string,
+  apiUrl: string
 ): Promise<{ exists: boolean; document: BsaleDocument | null; error?: string }> {
-  const accessToken = import.meta.env.PUBLIC_BSALE_ACCESS_TOKEN;
-  const apiUrl = import.meta.env.PUBLIC_BSALE_API_URL || "https://api.bsale.cl";
-
-  if (!accessToken) {
-    console.warn("PUBLIC_BSALE_ACCESS_TOKEN no está configurado. La validación de Bsale no funcionará.");
-    return {
-      exists: false,
-      document: null,
-      error: "Token de Bsale no configurado",
-    };
-  }
-
-  if (!receiptNumber || !receiptNumber.trim()) {
-    return {
-      exists: false,
-      document: null,
-      error: "Número de boleta vacío",
-    };
-  }
-
   try {
-    // Intentar buscar por número de documento
-    // La API de Bsale puede usar diferentes parámetros según la versión
     const url = `${apiUrl}/v1/documents.json?number=${encodeURIComponent(receiptNumber.trim())}`;
     
     const response = await fetch(url, {
@@ -75,27 +76,16 @@ export async function validateBsaleDocument(
       let errorMessage = `Error ${response.status}: ${response.statusText}`;
       
       if (response.status === 401) {
-        errorMessage = "Token de Bsale inválido o expirado. Verifica que sea un token de producción si necesitas acceder a boletas reales.";
+        errorMessage = "Token de Bsale inválido o expirado.";
       } else if (response.status === 403) {
-        errorMessage = "Token sin permisos. Asegúrate de usar un token de producción para acceder a documentos reales.";
+        errorMessage = "Token sin permisos.";
       } else if (response.status === 404) {
-        // 404 puede significar que el endpoint no existe o el documento no se encontró
-        // Intentaremos parsear la respuesta para ver si hay más información
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          // Si no se puede parsear, usar el mensaje por defecto
-        }
+        // 404 significa que el documento no se encontró con este token
+        return {
+          exists: false,
+          document: null,
+        };
       }
-      
-      console.error("Error en respuesta de Bsale:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-      });
       
       return {
         exists: false,
@@ -142,15 +132,99 @@ export async function validateBsaleDocument(
       },
     };
   } catch (error) {
-    console.error("Error validando documento en Bsale:", error);
+    console.error("Error validando documento en Bsale con token:", error);
     const errorMessage = error instanceof Error ? error.message : "Error desconocido";
     return {
       exists: false,
       document: null,
-      error: `Error de conexión con Bsale: ${errorMessage}. Verifica tu conexión a internet y la configuración del token.`,
+      error: `Error de conexión: ${errorMessage}`,
     };
   }
 }
+
+/**
+ * Valida si un número de boleta existe en Bsale
+ * Intenta validar con todos los tokens configurados hasta encontrar uno que funcione
+ * @param receiptNumber - Número de boleta a validar
+ * @param requireValidation - Si es true, bloquea si la factura no existe (default: false para retrocompatibilidad)
+ * @returns Objeto con información del documento si existe, null si no existe
+ */
+export async function validateBsaleDocument(
+  receiptNumber: string,
+  requireValidation: boolean = false
+): Promise<{ exists: boolean; document: BsaleDocument | null; error?: string }> {
+  const tokens = getBsaleTokens();
+  const apiUrl = import.meta.env.PUBLIC_BSALE_API_URL || "https://api.bsale.cl";
+
+  if (tokens.length === 0) {
+    const errorMsg = "Tokens de Bsale no configurados. Configura PUBLIC_BSALE_ACCESS_TOKEN o PUBLIC_BSALE_ACCESS_TOKENS.";
+    console.warn(errorMsg);
+    
+    if (requireValidation) {
+      return {
+        exists: false,
+        document: null,
+        error: errorMsg,
+      };
+    }
+    
+    return {
+      exists: false,
+      document: null,
+      error: "Token de Bsale no configurado",
+    };
+  }
+
+  if (!receiptNumber || !receiptNumber.trim()) {
+    return {
+      exists: false,
+      document: null,
+      error: "Número de boleta vacío",
+    };
+  }
+
+  // Intentar validar con cada token hasta encontrar uno que funcione
+  let lastError: string | undefined = undefined;
+  
+  for (const token of tokens) {
+    const result = await validateBsaleDocumentWithToken(receiptNumber.trim(), token, apiUrl);
+    
+    // Si encontramos el documento, retornar inmediatamente
+    if (result.exists && result.document) {
+      return result;
+    }
+    
+    // Guardar el último error (pero continuar con el siguiente token)
+    if (result.error && result.error !== "Error 404: Not Found") {
+      lastError = result.error;
+    }
+  }
+
+  // Si llegamos aquí, no se encontró el documento con ningún token
+  if (requireValidation) {
+    return {
+      exists: false,
+      document: null,
+      error: `⚠️ El número de factura "${receiptNumber.trim()}" no existe en Bsale. Por favor, verifica que el número sea correcto.`,
+    };
+  }
+
+  // Si no se requiere validación obligatoria, retornar sin error
+  return {
+    exists: false,
+    document: null,
+    error: lastError,
+  };
+}
+
+  if (!receiptNumber || !receiptNumber.trim()) {
+    return {
+      exists: false,
+      document: null,
+      error: "Número de boleta vacío",
+    };
+  }
+
 
 /**
  * Verifica si un número de recibo ya está registrado en la base de datos

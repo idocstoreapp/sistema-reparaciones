@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { calcCommission } from "@/lib/commission";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
+import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
 import DeviceAutocomplete from "./DeviceAutocomplete";
@@ -115,12 +116,48 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
 
     setLoading(true);
     // Si hay recibo, marcar como pagada, sino como pendiente
-    const status = receiptNumber.trim() ? "paid" : "pending";
+    const hasReceipt = receiptNumber.trim().length > 0;
+    const status = hasReceipt ? "paid" : "pending";
     
     if (!orderDate) {
       alert("Selecciona una fecha válida para la orden.");
       setLoading(false);
       return;
+    }
+
+    // Validar número de boleta con Bsale solo si se proporciona un recibo (OPCIONAL - no bloquea si falla)
+    let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
+    
+    if (hasReceipt) {
+      // Verificar duplicados en la base de datos
+      const isDuplicate = await checkReceiptNumberExists(receiptNumber.trim());
+      if (isDuplicate) {
+        alert("⚠️ Este número de boleta ya está registrado en otra orden");
+        setLoading(false);
+        return;
+      }
+
+      // ⚠️ VALIDACIÓN OBLIGATORIA: Validar con Bsale y bloquear si la factura no existe
+      try {
+        const bsaleValidation = await validateBsaleDocument(receiptNumber.trim(), true);
+        
+        // Si la validación falla, mostrar error y bloquear el guardado
+        if (!bsaleValidation.exists || !bsaleValidation.document) {
+          const errorMessage = bsaleValidation.error || "El número de factura no existe en Bsale. Por favor, verifica que el número sea correcto.";
+          alert(`❌ ${errorMessage}`);
+          setLoading(false);
+          return;
+        }
+        
+        // Si la validación fue exitosa, usar los datos de Bsale
+        bsaleData = bsaleValidation.document;
+      } catch (error) {
+        // Si hay un error de conexión, mostrar mensaje y bloquear
+        const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+        alert(`❌ Error al validar la factura con Bsale: ${errorMessage}\n\nPor favor, verifica tu conexión a internet e intenta nuevamente.`);
+        setLoading(false);
+        return;
+      }
     }
 
     // Crear fecha en UTC para evitar problemas de zona horaria
@@ -158,6 +195,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         paid_at: paidAt,
         payout_week: payoutWeek,
         payout_year: payoutYear,
+        // Campos de Bsale: extraídos automáticamente al validar el recibo
+        bsale_number: bsaleData?.number || null,
+        bsale_url: bsaleData?.url || null,
+        bsale_total_amount: bsaleData?.totalAmount || null,
       })
       .select()
       .maybeSingle();
