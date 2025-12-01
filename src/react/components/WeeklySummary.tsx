@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, currentMonthRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
-import { calcCommission } from "@/lib/commission";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
-import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 
 interface WeeklySummaryProps {
@@ -18,7 +16,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     weekGain: 0,
     weekAdjustments: 0,
     weekNet: 0,
-    pending: 0,
+    pendingCount: 0,
     monthGain: 0,
     returnsAndCancellations: 0,
     totalReturnsAndCancellations: 0,
@@ -32,16 +30,41 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       // ⚠️ CAMBIO CRÍTICO: Usar payout_week y payout_year en lugar de created_at
       // Las comisiones se asignan según la fecha de pago, no la fecha de creación
       const currentPayout = getCurrentPayoutWeek();
-      
+      const { start, end } = currentWeekRange();
+      const { start: ms, end: me } = currentMonthRange();
+      const weekStartISO = start.toISOString().slice(0, 10);
+
+      // Consultar si hay liquidaciones registradas para esta semana
+      // Si hay liquidación, solo contar órdenes creadas DESPUÉS de la liquidación más reciente
+      const { data: settlementsData } = await supabase
+        .from("salary_settlements")
+        .select("created_at")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO)
+        .order("created_at", { ascending: false });
+
+      // Fecha de la última liquidación de la semana (si existe)
+      const lastSettlementDate = settlementsData && settlementsData.length > 0
+        ? new Date(settlementsData[0].created_at)
+        : null;
+
       // Consulta para órdenes pagadas de la semana actual (basado en payout_week)
       // Solo órdenes que fueron pagadas esta semana según su payout_week/payout_year
-      const { data: week, error: weekError } = await supabase
+      // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
+      let weekQuery = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
         .eq("status", "paid") // Solo órdenes pagadas tienen payout_week
         .eq("payout_week", currentPayout.week)
         .eq("payout_year", currentPayout.year);
+      
+      // Si hay liquidación, excluir órdenes liquidadas (solo contar órdenes nuevas)
+      if (lastSettlementDate) {
+        weekQuery = weekQuery.gte("paid_at", lastSettlementDate.toISOString());
+      }
+
+      const { data: week, error: weekError } = await weekQuery;
 
       // Consulta para órdenes pagadas del mes actual
       // Usar paid_at para filtrar por mes (retrocompatibilidad: órdenes sin payout_week usan paid_at)
@@ -68,12 +91,20 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .eq("technician_id", technicianId)
         .eq("status", "pending");
 
-      const { data: weeklyAdjustments, error: adjustmentsError } = await supabase
+      // Ajustes de la semana - solo los creados después de la última liquidación (si existe)
+      let adjustmentsQuery = supabase
         .from("salary_adjustments")
         .select("amount")
         .eq("technician_id", technicianId)
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
+      
+      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      if (lastSettlementDate) {
+        adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+      
+      const { data: weeklyAdjustments, error: adjustmentsError } = await adjustmentsQuery;
 
       if (weekError) {
         console.error("Error loading week orders:", weekError);
@@ -104,45 +135,10 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       // La semana se fija cuando la orden se marca como pagada y nunca cambia
       const weekGain = weekOrders.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
       
-      // Pendientes: calcular el TOTAL de todas las órdenes sin recibo/boleta (sin límite de fecha)
-      // Suma total de comisiones de órdenes que están pendientes (status = 'pending')
-      // Cuando se agrega el recibo manualmente, estas órdenes pasan a status = 'paid'
-      // y se suman en "Ganancia Semanal (Con Recibo)"
-      // Recalcular comisión para cada orden pendiente basándose en el medio de pago actual
-      // (puede que hayan agregado el medio de pago después de crear la orden)
+      // Pendientes: solo contar la cantidad de órdenes pendientes (sin límite de fecha)
+      // No calculamos el total de dinero para no modificar la fórmula original
       const allPending = allPendingOrders ?? [];
-      
-      // Debug: mostrar órdenes pendientes encontradas
-      if (allPending.length > 0) {
-        console.log(`[WeeklySummary] Encontradas ${allPending.length} órdenes pendientes:`, allPending.map(o => ({
-          order_number: o.order_number,
-          payment_method: o.payment_method,
-          repair_cost: o.repair_cost,
-          replacement_cost: o.replacement_cost,
-          commission_amount: o.commission_amount
-        })));
-      }
-      
-      const pending = allPending.reduce((s, r) => {
-        // Si la orden tiene medio de pago, recalcular la comisión basándose en precio y método
-        // Si no tiene medio de pago, usar la comisión almacenada (será 0 hasta que se agregue medio de pago)
-        const paymentMethod = (r.payment_method as PaymentMethod) || "";
-        if (paymentMethod) {
-          const recalculatedCommission = calcCommission({
-            paymentMethod,
-            costoRepuesto: r.replacement_cost ?? 0,
-            precioTotal: r.repair_cost ?? 0,
-          });
-          console.log(`[WeeklySummary] Orden ${r.order_number}: comisión recalculada = ${recalculatedCommission} (método: ${paymentMethod}, precio: ${r.repair_cost}, repuesto: ${r.replacement_cost})`);
-          return s + recalculatedCommission;
-        }
-        // Si no hay medio de pago, usar la comisión almacenada (probablemente 0)
-        // La comisión será 0 hasta que se agregue el medio de pago
-        console.log(`[WeeklySummary] Orden ${r.order_number}: sin medio de pago, comisión almacenada = ${r.commission_amount ?? 0}`);
-        return s + (r.commission_amount ?? 0);
-      }, 0);
-      
-      console.log(`[WeeklySummary] Total pendiente calculado: ${pending}`);
+      const pendingCount = allPending.length; // Contar cantidad de órdenes pendientes
       
       // Total del mes: suma de comisiones de órdenes pagadas del mes actual
       // Basado en payout_year y filtrado por paid_at para retrocompatibilidad
@@ -167,7 +163,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         weekGain,
         weekAdjustments: weekAdjustmentsTotal,
         weekNet,
-        pending,
+        pendingCount,
         monthGain,
         returnsAndCancellations,
         totalReturnsAndCancellations,
@@ -177,14 +173,19 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     
     loadData();
     
-    // Escuchar evento de actualización de órdenes
+    // Escuchar eventos de liquidación y actualización de órdenes para refrescar el dashboard
+    const handleSettlementCreated = () => {
+      void loadData();
+    };
+    
     const handleOrderUpdated = () => {
       void loadData();
     };
     
+    window.addEventListener('settlementCreated', handleSettlementCreated);
     window.addEventListener('orderUpdated', handleOrderUpdated);
-    
     return () => {
+      window.removeEventListener('settlementCreated', handleSettlementCreated);
       window.removeEventListener('orderUpdated', handleOrderUpdated);
     };
   }, [technicianId, refreshKey]);
@@ -231,9 +232,14 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         title="Pendientes de Pago"
         value={
           <>
-            <span>${formatCLP(kpis.pending)}</span>
-            <span className="block text-xs font-normal text-slate-500 mt-1">
-              Órdenes sin recibo/boleta
+            <span className="text-2xl font-semibold text-slate-900">
+              {kpis.pendingCount}
+            </span>
+            <span className="block text-sm font-normal text-slate-500 mt-1">
+              {kpis.pendingCount === 1 ? 'orden pendiente' : 'órdenes pendientes'}
+            </span>
+            <span className="block text-xs font-normal text-slate-400 mt-1">
+              Sin recibo registrado
             </span>
           </>
         }

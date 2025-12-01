@@ -38,9 +38,13 @@ export default function SalarySettlementPanel({
   const [applicationsSupported, setApplicationsSupported] = useState(true);
   const [setupWarning, setSetupWarning] = useState<string | null>(null);
   const [settledAmount, setSettledAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "otro">("efectivo");
+  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "efectivo/transferencia">("efectivo");
+  const [cashAmount, setCashAmount] = useState(0);
+  const [transferAmount, setTransferAmount] = useState(0);
   const [customAmountInput, setCustomAmountInput] = useState(0);
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
+  const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
+  const [returnsTotal, setReturnsTotal] = useState(0);
 
   const { start: weekStartDate, end: weekEndDate } = currentWeekRange();
   const weekStartISO = weekStartDate.toISOString().slice(0, 10);
@@ -50,15 +54,35 @@ export default function SalarySettlementPanel({
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    // Consultar si hay liquidaciones registradas para esta semana
+    const { data: settlementsData } = await supabase
+      .from("salary_settlements")
+      .select("created_at")
+      .eq("technician_id", technicianId)
+      .eq("week_start", weekStartISO)
+      .order("created_at", { ascending: false });
+
+    // Fecha de la última liquidación de la semana (si existe)
+    const lastSettlementDate = settlementsData && settlementsData.length > 0
+      ? new Date(settlementsData[0].created_at)
+      : null;
+
     async function fetchAdjustments(includeApplications: boolean) {
       const selectClause = includeApplications
         ? "*, applications:salary_adjustment_applications(applied_amount)"
         : "*";
-      return await supabase
+      let query = supabase
         .from("salary_adjustments")
         .select(selectClause)
-        .eq("technician_id", technicianId)
-        .order("created_at", { ascending: false });
+        .eq("technician_id", technicianId);
+      
+      // Si hay liquidación, solo cargar ajustes creados DESPUÉS de la liquidación
+      // Los ajustes ya liquidadas no deben aparecer
+      if (lastSettlementDate) {
+        query = query.gte("created_at", lastSettlementDate.toISOString());
+      }
+      
+      return await query.order("created_at", { ascending: false });
     }
 
     let adjustmentsResponse = await fetchAdjustments(applicationsSupported);
@@ -157,6 +181,30 @@ export default function SalarySettlementPanel({
       );
     }
 
+    // Cargar devoluciones y cancelaciones de la semana
+    // Solo las creadas después de la última liquidación (si existe)
+    const { start, end } = currentWeekRange();
+    let returnsQuery = supabase
+      .from("orders")
+      .select("id, commission_amount, status")
+      .eq("technician_id", technicianId)
+      .in("status", ["returned", "cancelled"])
+      .gte("created_at", start.toISOString())
+      .lte("created_at", end.toISOString());
+    
+    // Si hay liquidación, solo contar devoluciones creadas DESPUÉS de la liquidación
+    if (lastSettlementDate) {
+      returnsQuery = returnsQuery.gte("created_at", lastSettlementDate.toISOString());
+    }
+    
+    const { data: returnedData } = await returnsQuery;
+
+    if (returnedData) {
+      setReturnedOrders(returnedData);
+      const total = returnedData.reduce((sum, order) => sum + (order.commission_amount ?? 0), 0);
+      setReturnsTotal(total);
+    }
+
     setLoading(false);
   }
 
@@ -164,6 +212,18 @@ export default function SalarySettlementPanel({
     if (technicianId) {
       void loadPendingAdjustments();
     }
+    
+    // Escuchar eventos de liquidación para refrescar el panel
+    const handleSettlementCreated = () => {
+      if (technicianId) {
+        void loadPendingAdjustments();
+      }
+    };
+    
+    window.addEventListener('settlementCreated', handleSettlementCreated);
+    return () => {
+      window.removeEventListener('settlementCreated', handleSettlementCreated);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [technicianId]);
 
@@ -299,9 +359,38 @@ export default function SalarySettlementPanel({
   }
 
   async function handleLiquidation() {
-    const targetAmount = Math.max(minPayable, Math.min(customAmountInput, maxPayable));
+    // Si es pago mixto, validar que ambos montos sumen el total
+    let targetAmount = customAmountInput;
+    
+    if (paymentMethod === "efectivo/transferencia") {
+      const mixedTotal = cashAmount + transferAmount;
+      if (mixedTotal <= 0) {
+        setErrorMsg("Debes ingresar al menos un monto en efectivo o transferencia.");
+        return;
+      }
+      if (mixedTotal > netRemaining) {
+        setErrorMsg(`El total de efectivo + transferencia no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
+        return;
+      }
+      // Usar el total mixto como monto a liquidar
+      targetAmount = mixedTotal;
+      setCustomAmountInput(mixedTotal);
+    } else {
+      // Para efectivo o transferencia individual, validar que no exceda el total a liquidar
+      if (targetAmount > netRemaining) {
+        setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
+        return;
+      }
+    }
+    
+    // Permitir pagos parciales (no requiere que sea exactamente minPayable o maxPayable)
     if (targetAmount <= 0) {
-      setErrorMsg("No queda saldo por liquidar esta semana.");
+      setErrorMsg("Debes ingresar un monto mayor a 0 para liquidar.");
+      return;
+    }
+    
+    if (targetAmount > netRemaining) {
+      setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
       return;
     }
     setErrorMsg(null);
@@ -421,10 +510,19 @@ export default function SalarySettlementPanel({
         };
       }),
       carry_over: carryOverSummary,
+      // Si es pago mixto, guardar los montos por separado
+      ...(paymentMethod === "efectivo/transferencia" && {
+        payment_breakdown: {
+          efectivo: cashAmount,
+          transferencia: transferAmount,
+          total: targetAmount,
+        },
+      }),
     };
 
     const { data: userData } = await supabase.auth.getUser();
-    const { error: settlementError } = await supabase.from("salary_settlements").insert({
+    
+    const settlementData = {
       technician_id: technicianId,
       week_start: weekStartISO,
       amount: targetAmount,
@@ -433,12 +531,20 @@ export default function SalarySettlementPanel({
       payment_method: paymentMethod,
       details: detailsPayload,
       created_by: userData?.user?.id ?? null,
-    });
+    };
+    
+    console.log("Guardando liquidación con los siguientes datos:", settlementData);
+    
+    const { data: insertedData, error: settlementError } = await supabase
+      .from("salary_settlements")
+      .insert(settlementData)
+      .select(); // Seleccionar los datos insertados para verificar
 
     setSaving(false);
 
     if (settlementError) {
       console.error("Error registrando pago:", settlementError);
+      console.error("Detalles del error:", JSON.stringify(settlementError, null, 2));
       const msg = settlementError.message?.toLowerCase() ?? "";
       if (msg.includes("salary_settlements") || msg.includes("does not exist")) {
         setSetupWarning(
@@ -447,18 +553,83 @@ export default function SalarySettlementPanel({
         setErrorMsg(
           "No pudimos registrar el pago porque falta la tabla de liquidaciones. Ejecuta el script indicado y vuelve a intentarlo."
         );
+      } else if (msg.includes("row-level security") || msg.includes("policy")) {
+        setErrorMsg(
+          `Error de seguridad: ${settlementError.message}. Verifica que tengas permisos de administrador para registrar liquidaciones.`
+        );
+        console.error("Problema con las políticas RLS. Verifica las políticas de inserción en Supabase.");
       } else {
-        setErrorMsg("No pudimos registrar el pago. Intenta nuevamente.");
+        setErrorMsg(`No pudimos registrar el pago: ${settlementError.message}. Verifica la consola para más detalles.`);
       }
       return;
     }
 
-    setSuccessMsg("Liquidación registrada correctamente.");
+    if (!insertedData || insertedData.length === 0) {
+      console.error("No se recibieron datos de confirmación de la inserción");
+      setErrorMsg("❌ ERROR CRÍTICO: La liquidación no se pudo confirmar. NO se guardó. Por favor, intenta nuevamente.");
+      // Intentar verificar si se guardó de todas formas consultando la BD
+      try {
+        const { data: verification, error: verifyError } = await supabase
+          .from("salary_settlements")
+          .select("id, amount, created_at")
+          .eq("technician_id", technicianId)
+          .eq("week_start", weekStartISO)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (verification && !verifyError) {
+          console.warn("Aunque no se recibió confirmación, se encontró una liquidación en la BD:", verification);
+          setSuccessMsg(`⚠️ Liquidación posiblemente guardada (ID: ${verification.id}). Verifica en el historial.`);
+        } else {
+          setErrorMsg("❌ ERROR: La liquidación NO se guardó. Verifica los logs en la consola e intenta nuevamente.");
+        }
+      } catch (verifyErr) {
+        console.error("Error al verificar liquidación:", verifyErr);
+        setErrorMsg("❌ ERROR: No se pudo confirmar si la liquidación se guardó. Verifica en el historial o intenta nuevamente.");
+      }
+      return;
+    }
+
+    // VERIFICACIÓN ADICIONAL: Confirmar que realmente se guardó consultando la BD
+    const savedSettlementId = insertedData[0].id;
+    console.log("Liquidación insertada, verificando en BD... ID:", savedSettlementId);
+    
+    try {
+      const { data: verification, error: verifyError } = await supabase
+        .from("salary_settlements")
+        .select("id, amount, created_at, technician_id, week_start")
+        .eq("id", savedSettlementId)
+        .maybeSingle();
+      
+      if (verifyError || !verification) {
+        console.error("❌ ERROR: La liquidación se insertó pero NO se pudo verificar:", verifyError);
+        setErrorMsg(`⚠️ ADVERTENCIA: La liquidación fue insertada (ID: ${savedSettlementId}) pero no se pudo verificar. Por favor, verifica en el historial si aparece correctamente.`);
+        // Continuar de todas formas ya que la inserción fue exitosa
+      } else {
+        console.log("✅ VERIFICACIÓN EXITOSA: La liquidación se guardó correctamente:", verification);
+      }
+    } catch (verifyErr) {
+      console.error("Error en verificación adicional:", verifyErr);
+      // Continuar de todas formas
+    }
+
+    setSuccessMsg(`✅ Liquidación registrada correctamente. ID: ${savedSettlementId} | Monto: ${formatCLP(targetAmount)} | Técnico: ${technicianName || technicianId}`);
     setPaymentMethod("efectivo");
+    setCashAmount(0);
+    setTransferAmount(0);
     await loadPendingAdjustments();
     if (onAfterSettlement) {
       onAfterSettlement();
     }
+    
+    // Disparar evento para actualizar el historial
+    window.dispatchEvent(new CustomEvent('settlementCreated'));
+    
+    // Alert visual adicional para asegurar que el usuario vea el mensaje
+    setTimeout(() => {
+      alert(`✅ LIQUIDACIÓN GUARDADA\n\nID: ${savedSettlementId}\nMonto: ${formatCLP(targetAmount)}\nTécnico: ${technicianName || technicianId}\n\nPuedes verificar en el historial de liquidaciones.`);
+    }, 500);
   }
 
   const noAdjustments = pendingAdjustments.length === 0;
@@ -466,21 +637,24 @@ export default function SalarySettlementPanel({
     <div className="space-y-2">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Base con recibo</p>
+          <p className="text-xs text-slate-500">Total ganado</p>
           <p className="text-lg font-semibold text-emerald-600">${formatAmount(baseAmount)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Ajustes seleccionados</p>
+          <p className="text-xs text-slate-500">Descuentos</p>
           <p className="text-lg font-semibold text-slate-700">
             -${formatAmount(selectedAdjustmentsTotal)}
           </p>
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Liquidado esta semana</p>
-          <p className="text-lg font-semibold text-sky-600">${formatAmount(settledAmount)}</p>
+          <p className="text-xs text-slate-500">Devoluciones</p>
+          <p className="text-xs text-slate-400 mb-1">
+            {returnedOrders.length} {returnedOrders.length === 1 ? 'orden' : 'órdenes'}
+          </p>
+          <p className="text-lg font-semibold text-sky-600">${formatAmount(returnsTotal)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Saldo por liquidar</p>
+          <p className="text-xs text-slate-500">Total a liquidar</p>
           <p className="text-lg font-semibold text-brand">${formatAmount(netRemaining)}</p>
         </div>
       </div>
@@ -521,58 +695,137 @@ export default function SalarySettlementPanel({
           {technicianName && <span className="text-xs text-slate-500">• {technicianName}</span>}
         </h5>
         <p className="text-xs text-slate-500">
-          Ajusta cuánto descontarás esta semana. Los montos omitidos quedarán pendientes para la próxima
-          liquidación.
+          Ingresa el monto a liquidar. Puedes pagar un monto parcial y el saldo restante quedará pendiente.
         </p>
         <div className="flex flex-wrap items-center gap-2 mt-2">
-          <button
-            type="button"
-            onClick={() => applyPreset("net")}
-            className="px-3 py-1 text-xs font-semibold border border-emerald-500 text-emerald-600 rounded-md hover:bg-emerald-50 transition"
-          >
-            Liquidar neto (aplicar descuentos)
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset("full")}
-            className="px-3 py-1 text-xs font-semibold border border-slate-400 text-slate-600 rounded-md hover:bg-slate-100 transition"
-          >
-            Pagar sueldo completo (sin descuentos)
-          </button>
-          <label className="text-xs text-slate-500 flex items-center gap-2">
-            Medio de pago:
-            <select
-              className="border border-slate-300 rounded-md px-2 py-1 text-xs"
-              value={paymentMethod}
-              onChange={(e) =>
-                setPaymentMethod(e.target.value as "efectivo" | "transferencia" | "otro")
-              }
-            >
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="otro">Otro</option>
-            </select>
-          </label>
-        </div>
-        <div className="flex flex-wrap items-end gap-2 mt-3">
-          <label className="text-xs text-slate-500 flex flex-col gap-1">
-            Monto a liquidar (rango ${formatAmount(minPayable)} - ${formatAmount(maxPayable)})
-            <input
-              type="number"
-              className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-              value={customAmountInput}
-              min={minPayable}
-              max={maxPayable}
-              onChange={(e) => setCustomAmountInput(Number(e.target.value))}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => applyCustomAmount(customAmountInput)}
-            className="px-3 py-1 text-xs font-semibold border border-slate-300 rounded-md hover:bg-slate-100 transition"
-          >
-            Aplicar monto
-          </button>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs text-slate-500 flex items-center gap-2">
+              Medio de pago:
+              <select
+                className="border border-slate-300 rounded-md px-2 py-1 text-xs"
+                value={paymentMethod}
+                onChange={(e) => {
+                  const newMethod = e.target.value as "efectivo" | "transferencia" | "efectivo/transferencia";
+                  setPaymentMethod(newMethod);
+                  if (newMethod !== "efectivo/transferencia") {
+                    setCashAmount(0);
+                    setTransferAmount(0);
+                    // Si cambia a efectivo o transferencia, resetear el monto
+                    setCustomAmountInput(0);
+                  } else {
+                    // Si cambia a mixto, resetear ambos montos
+                    setCashAmount(0);
+                    setTransferAmount(0);
+                    setCustomAmountInput(0);
+                  }
+                }}
+              >
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="efectivo/transferencia">Efectivo/Transferencia</option>
+              </select>
+            </label>
+            {paymentMethod === "efectivo" && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-slate-500 flex flex-col gap-1">
+                  Monto en Efectivo:
+                  <input
+                    type="number"
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
+                    value={customAmountInput}
+                    min={0}
+                    max={netRemaining}
+                    onChange={(e) => {
+                      const amount = Number(e.target.value) || 0;
+                      setCustomAmountInput(amount);
+                    }}
+                  />
+                </label>
+                {customAmountInput > 0 && customAmountInput < netRemaining && (
+                  <p className="text-xs text-amber-600">
+                    Saldo restante: {formatCLP(netRemaining - customAmountInput)}
+                  </p>
+                )}
+              </div>
+            )}
+            {paymentMethod === "transferencia" && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-slate-500 flex flex-col gap-1">
+                  Monto en Transferencia:
+                  <input
+                    type="number"
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
+                    value={customAmountInput}
+                    min={0}
+                    max={netRemaining}
+                    onChange={(e) => {
+                      const amount = Number(e.target.value) || 0;
+                      setCustomAmountInput(amount);
+                    }}
+                  />
+                </label>
+                {customAmountInput > 0 && customAmountInput < netRemaining && (
+                  <p className="text-xs text-amber-600">
+                    Saldo restante: {formatCLP(netRemaining - customAmountInput)}
+                  </p>
+                )}
+              </div>
+            )}
+            {paymentMethod === "efectivo/transferencia" && (
+              <div className="flex gap-3 items-end">
+                <label className="text-xs text-slate-500 flex flex-col gap-1">
+                  Monto en Efectivo:
+                  <input
+                    type="number"
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
+                    value={cashAmount}
+                    min={0}
+                    max={netRemaining}
+                    onChange={(e) => {
+                      const cash = Number(e.target.value) || 0;
+                      const maxCash = Math.min(cash, netRemaining);
+                      setCashAmount(maxCash);
+                      const remaining = Math.max(0, netRemaining - maxCash);
+                      // Ajustar transferAmount si excede el restante
+                      const adjustedTransfer = Math.min(transferAmount, remaining);
+                      setTransferAmount(adjustedTransfer);
+                      setCustomAmountInput(maxCash + adjustedTransfer);
+                    }}
+                  />
+                  {cashAmount > 0 && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      Restante: {formatCLP(Math.max(0, netRemaining - cashAmount))}
+                    </p>
+                  )}
+                </label>
+                <label className="text-xs text-slate-500 flex flex-col gap-1">
+                  Monto en Transferencia:
+                  <input
+                    type="number"
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
+                    value={transferAmount}
+                    min={0}
+                    max={Math.max(0, netRemaining - cashAmount)}
+                    onChange={(e) => {
+                      const transfer = Number(e.target.value) || 0;
+                      const maxTransfer = Math.max(0, netRemaining - cashAmount);
+                      const adjustedTransfer = Math.min(transfer, maxTransfer);
+                      setTransferAmount(adjustedTransfer);
+                      setCustomAmountInput(cashAmount + adjustedTransfer);
+                    }}
+                  />
+                </label>
+                <div className="text-xs text-slate-600 pb-1 flex flex-col">
+                  <span className="font-semibold">Total: {formatCLP(cashAmount + transferAmount)}</span>
+                  {cashAmount + transferAmount < netRemaining && (
+                    <span className="text-amber-600 mt-1">
+                      Restante: {formatCLP(netRemaining - (cashAmount + transferAmount))}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -704,7 +957,7 @@ export default function SalarySettlementPanel({
         <button
           type="button"
           onClick={() => void handleLiquidation()}
-          disabled={saving || netRemaining <= 0}
+          disabled={saving || (paymentMethod === "efectivo/transferencia" ? (cashAmount + transferAmount) <= 0 : customAmountInput <= 0)}
           className="px-4 py-2 text-xs font-semibold rounded-md text-white bg-brand-light hover:bg-white hover:text-brand border border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Guardando..." : "Registrar liquidación"}
@@ -713,5 +966,6 @@ export default function SalarySettlementPanel({
     </div>
   );
 }
+
 
 

@@ -4,7 +4,7 @@ import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
-import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
+import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, type DuplicateInfo } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
 
@@ -31,6 +31,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [editingCostsId, setEditingCostsId] = useState<string | null>(null);
   const [editReceipt, setEditReceipt] = useState("");
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>("");
+  const [editReceiptDate, setEditReceiptDate] = useState<string>("");
   const [editReplacementCost, setEditReplacementCost] = useState<number>(0);
   const [editRepairCost, setEditRepairCost] = useState<number>(0);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [hasAdminSearched, setHasAdminSearched] = useState(!isAdmin);
   const [adminActiveFilters, setAdminActiveFilters] = useState<LoadFilters | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
+  const [duplicates, setDuplicates] = useState<Record<string, DuplicateInfo>>({});
 
   const localOptions = useMemo(() => {
     const locales = new Set<string>();
@@ -72,7 +74,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     let q = supabase
       .from("orders")
-      .select("*")
+      .select(`
+        *,
+        suppliers (
+          id,
+          name
+        )
+      `)
       .order("created_at", { ascending: false });
 
     if (filters?.technicianId) {
@@ -93,8 +101,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     if (error) {
       console.error("Error loading orders:", error);
       setOrders([]);
+      setDuplicates({});
     } else {
-      setOrders((data as Order[]) ?? []);
+      const loadedOrders = (data as Order[]) ?? [];
+      setOrders(loadedOrders);
+      // Detectar duplicados después de cargar las órdenes
+      const detectedDuplicates = detectDuplicates(loadedOrders);
+      setDuplicates(detectedDuplicates);
     }
     setLoading(false);
   }, [technicianId, isAdmin]);
@@ -296,6 +309,10 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     // Si hay recibo, validarlo; si no, solo actualizar el medio de pago
     const hasReceipt = editReceipt.trim().length > 0;
     
+    // IMPORTANTE: Si la orden ya tiene recibo Y estamos modificando/agregando uno nuevo,
+    // también debemos verificar si necesita actualizar la fecha a la semana actual
+    const isUpdatingReceipt = hasReceipt && currentOrder.receipt_number;
+    
     // Validar número de boleta con Bsale solo si se proporciona un recibo (OPCIONAL - no bloquea si falla)
     let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
     
@@ -359,6 +376,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       paid_at?: string | null;
       payout_week?: number | null;
       payout_year?: number | null;
+      created_at?: string;
     } = {
       payment_method: paymentMethodToUse || '', // Usar '' en lugar de null (NOT NULL constraint)
       status: newStatus,
@@ -374,23 +392,123 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       updateData.bsale_number = bsaleData?.number || null;
       updateData.bsale_url = bsaleData?.url || null;
       updateData.bsale_total_amount = bsaleData?.totalAmount || null;
+
+      // Si se proporcionó una fecha de recibo, verificar si es diferente a la fecha original
+      // y si cae en una semana diferente, actualizar la fecha de la orden
+      if (editReceiptDate) {
+        const originalOrderDate = new Date(currentOrder.created_at);
+        const receiptDate = new Date(editReceiptDate + 'T12:00:00'); // Agregar hora para evitar problemas de zona horaria
+        
+        // Comparar solo las fechas (sin hora)
+        const originalDateOnly = new Date(originalOrderDate.getFullYear(), originalOrderDate.getMonth(), originalOrderDate.getDate());
+        const receiptDateOnly = new Date(receiptDate.getFullYear(), receiptDate.getMonth(), receiptDate.getDate());
+        
+        // Verificar si la fecha es diferente
+        const isDifferentDate = receiptDateOnly.getTime() !== originalDateOnly.getTime();
+        
+        // Calcular las semanas de ambas fechas
+        const { start: originalWeekStart } = currentWeekRange(originalOrderDate);
+        const { start: receiptWeekStart } = currentWeekRange(receiptDate);
+        
+        // Verificar si cae en una semana diferente
+        const isDifferentWeek = receiptWeekStart.getTime() !== originalWeekStart.getTime();
+        
+        console.log(`🔍 Verificando fecha de recibo para orden ${currentOrder.order_number}:`, {
+          fechaOriginal: originalOrderDate.toLocaleDateString('es-CL'),
+          fechaRecibo: receiptDate.toLocaleDateString('es-CL'),
+          semanaOriginal: originalWeekStart.toLocaleDateString('es-CL'),
+          semanaRecibo: receiptWeekStart.toLocaleDateString('es-CL'),
+          esFechaDiferente: isDifferentDate,
+          esSemanaDiferente: isDifferentWeek
+        });
+        
+        // Si la fecha es diferente, actualizar (permitir fechas futuras razonables, hasta 30 días)
+        if (isDifferentDate) {
+          const now = new Date();
+          const daysDifference = Math.floor((receiptDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          
+          // Permitir fechas futuras hasta 30 días
+          if (daysDifference > 30) {
+            alert(`⚠️ La fecha del recibo no puede ser más de 30 días en el futuro.`);
+            return;
+          }
+          
+          // Actualizar siempre que la fecha sea diferente (permite corregir fechas incorrectas)
+          // No importa si es anterior o posterior, el usuario puede corregirla
+          
+          // Guardar la fecha original si no existe en original_created_at (ANTES de actualizar)
+          if (!currentOrder.original_created_at) {
+            console.log(`📝 Guardando fecha original: ${originalOrderDate.toISOString()}`);
+            // Actualizar original_created_at antes de cambiar created_at
+            const { error: originalError } = await supabase
+              .from("orders")
+              .update({ original_created_at: currentOrder.created_at })
+              .eq("id", orderId);
+            
+            if (originalError) {
+              console.error("❌ Error guardando original_created_at:", originalError);
+            } else {
+              console.log(`✅ original_created_at guardado exitosamente`);
+            }
+          }
+          
+          // Actualizar la fecha de la orden a la fecha del recibo (en UTC)
+          const receiptDateUTC = new Date(Date.UTC(
+            receiptDate.getFullYear(),
+            receiptDate.getMonth(),
+            receiptDate.getDate(),
+            12, 0, 0, 0
+          ));
+          updateData.created_at = receiptDateUTC.toISOString();
+          console.log(`🔄 ACTUALIZANDO orden ${currentOrder.order_number}: fecha cambia de ${originalOrderDate.toLocaleDateString('es-CL')} a ${receiptDate.toLocaleDateString('es-CL')}`);
+          if (isDifferentWeek) {
+            console.log(`📅 La orden se moverá a una nueva semana`);
+          }
+          console.log(`📊 Nueva fecha en ISO: ${receiptDateUTC.toISOString()}`);
+        } else {
+          console.log(`ℹ️ La fecha del recibo es igual a la fecha original, no se actualiza`);
+        }
+      }
     }
 
-    const { error } = await supabase
+    console.log(`💾 Actualizando orden ${currentOrder.order_number} con datos:`, updateData);
+    
+    const { error, data: updatedData } = await supabase
       .from("orders")
       .update(updateData)
-      .eq("id", orderId);
+      .eq("id", orderId)
+      .select()
+      .single();
 
     if (error) {
       alert(`Error: ${error.message}`);
+      console.error("❌ Error actualizando orden:", error);
     } else {
+      console.log(`✅ Orden ${currentOrder.order_number} actualizada exitosamente:`, updatedData);
+      
+      // Si se actualizó la fecha a una nueva semana, mostrar mensaje informativo
+      if (updateData.created_at) {
+        const orderDate = new Date(currentOrder.created_at);
+        const newDate = new Date(updateData.created_at);
+        console.log(`✅ Orden ${currentOrder.order_number} actualizada: fecha cambiada de ${orderDate.toLocaleDateString('es-CL')} a ${newDate.toLocaleDateString('es-CL')} (nueva semana)`);
+        alert(`✅ Orden actualizada. La fecha se ajustó a la semana de la fecha del recibo (${newDate.toLocaleDateString('es-CL')}).`);
+      } else {
+        console.log(`✅ Recibo agregado/modificado a orden ${currentOrder.order_number}`);
+      }
+
       setEditingId(null);
       setEditReceipt("");
       setEditPaymentMethod("");
-      refreshOrders(); // Recargar órdenes
-      if (onUpdate) onUpdate(); // Notificar al componente padre
-      // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
-      window.dispatchEvent(new CustomEvent('orderUpdated'));
+      setEditReceiptDate("");
+      
+      // Esperar un momento antes de refrescar para asegurar que la actualización se complete en la BD
+      setTimeout(() => {
+        refreshOrders(); // Recargar órdenes (esto actualizará los duplicados automáticamente)
+        if (onUpdate) onUpdate(); // Notificar al componente padre
+        // Disparar evento para notificar a otros componentes (WeeklySummary, AdminReports, etc.)
+        window.dispatchEvent(new CustomEvent('orderUpdated'));
+        console.log(`🔄 Evento 'orderUpdated' disparado para refrescar componentes`);
+      }, 500);
     }
   }
 
@@ -438,7 +556,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         setEditingCostsId(null);
         setEditReplacementCost(0);
         setEditRepairCost(0);
-        refreshOrders(); // Recargar órdenes
+        refreshOrders(); // Recargar órdenes (esto actualizará los duplicados automáticamente)
         if (onUpdate) onUpdate(); // Notificar al componente padre para actualizar KPIs
         // Disparar evento para notificar a otros componentes (AdminReports, SupplierPurchases)
         window.dispatchEvent(new CustomEvent('orderUpdated'));
@@ -785,6 +903,21 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
           {isAdmin ? "No se encontraron órdenes con los filtros seleccionados." : "No hay órdenes registradas"}
         </div>
       ) : (
+        <>
+          {(() => {
+            const visibleDuplicates = filtered.filter(o => duplicates[o.id]);
+            return visibleDuplicates.length > 0 && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-xs text-amber-800 font-semibold mb-1">
+                  ⚠️ Advertencia: Se detectaron órdenes con datos duplicados
+                </p>
+                <p className="text-xs text-amber-700">
+                  Hay {visibleDuplicates.length} orden(es) visible(s) con números de orden o recibos repetidos. 
+                  Las filas afectadas están resaltadas en amarillo con un ícono ⚠️.
+                </p>
+              </div>
+            );
+          })()}
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full align-middle">
             <div className="overflow-visible">
@@ -797,6 +930,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Servicio</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Pago</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Repuesto</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Proveedor</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Costo Rep.</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Estado</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Recibo</th>
@@ -811,10 +945,44 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                   <tr className={`border-b ${expandedOrderId === o.id ? "border-transparent" : "border-slate-100"} ${
                     o.status === "returned" || o.status === "cancelled" 
                       ? "bg-red-50/30 hover:bg-red-50/50" 
+                      : duplicates[o.id] 
+                      ? "bg-amber-50/50 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
                       : "hover:bg-slate-50"
                   }`}>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs">{formatDate(o.created_at)}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">{o.order_number || "-"}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <span>{formatDate(o.created_at)}</span>
+                          {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                            <span 
+                              className="text-[10px] text-amber-600 cursor-help" 
+                              title={`⚠️ Fecha modificada\nOriginal: ${new Date(o.original_created_at).toLocaleDateString('es-CL')}\nNueva: ${new Date(o.created_at).toLocaleDateString('es-CL')}`}
+                            >
+                              ⚠️
+                            </span>
+                          )}
+                        </div>
+                        {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                          <span className="text-[9px] text-amber-600 italic block">
+                            <span className="font-medium">Original:</span> {new Date(o.original_created_at).toLocaleDateString('es-CL')} → 
+                            <span className="font-medium"> Cambiada a:</span> {new Date(o.created_at).toLocaleDateString('es-CL')}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">
+                      <div className="flex items-center gap-1">
+                        <span>{o.order_number || "-"}</span>
+                        {duplicates[o.id]?.hasDuplicateOrderNumber && (
+                          <span 
+                            className="text-amber-600 cursor-help font-bold" 
+                            title="⚠️ Este número de orden está duplicado"
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
                     <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px] truncate" title={o.service_description}>{o.service_description}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
@@ -833,6 +1001,9 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       ) : (
                         <span className="text-slate-700">{formatCLP(o.replacement_cost || 0)}</span>
                       )}
+                    </td>
+                    <td className="py-2 px-2 whitespace-nowrap text-xs">
+                      {(o as any).suppliers?.name || "-"}
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
@@ -891,12 +1062,30 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           <option value="TARJETA">Tarjeta</option>
                           <option value="TRANSFERENCIA">Transferencia</option>
                         </select>
+                        <input
+                          type="date"
+                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
+                          value={editReceiptDate}
+                          onChange={(e) => setEditReceiptDate(e.target.value)}
+                          placeholder="Fecha de recibo"
+                          title="Selecciona la fecha del recibo (puede ser futura)"
+                        />
                         <p className="text-[10px] text-slate-500">
-                          Puedes agregar solo el medio de pago o ambos
+                          Selecciona la fecha del recibo. Si cae en otra semana, la orden se moverá a esa semana.
                         </p>
                       </div>
                     ) : o.receipt_number ? (
-                      <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                        {duplicates[o.id]?.hasDuplicateReceipt && (
+                          <span 
+                            className="text-amber-600 cursor-help font-bold" 
+                            title="⚠️ Este número de recibo está duplicado"
+                          >
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-slate-400 text-xs">-</span>
                     )}
@@ -950,6 +1139,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                   setEditingId(null);
                                   setEditReceipt("");
                                   setEditPaymentMethod("");
+                                  setEditReceiptDate("");
                                 }}
                                 className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition"
                               >
@@ -971,12 +1161,15 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                   Editar Montos
                                 </button>
                               )}
-                              {technicianId && o.status === "pending" && (
+                              {(technicianId || isAdmin) && (o.status === "pending" || (isAdmin && o.status === "paid")) && (
                                 <button
                                   onClick={() => {
                                     setEditingId(o.id);
                                     setEditReceipt(o.receipt_number || "");
                                     setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
+                                    // Inicializar con la fecha de hoy o la fecha original de la orden
+                                    const today = new Date().toISOString().split('T')[0];
+                                    setEditReceiptDate(today);
                                   }}
                                   className="px-2 py-0.5 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
                                 >
@@ -1010,8 +1203,32 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                 </tr>
                   {expandedOrderId === o.id && (
                     <tr className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={(technicianId || isAdmin) ? 10 : 9} className="px-4 py-4">
+                      <td colSpan={(technicianId || isAdmin) ? 11 : 10} className="px-4 py-4">
                         <div className="space-y-4">
+                          {(isAdmin || technicianId) && o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                            <div className="pb-2 border-b border-amber-200 bg-amber-50 rounded px-3 py-2">
+                              <p className="text-[10px] text-amber-700 font-semibold mb-1">
+                                ⚠️ Fecha modificada
+                              </p>
+                              <div className="space-y-0.5 text-[10px] text-amber-700">
+                                <p>
+                                  <span className="font-medium">Registrada originalmente:</span> {new Date(o.original_created_at).toLocaleString("es-CL", {
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  })}
+                                </p>
+                                <p>
+                                  <span className="font-medium">Cambiada a:</span> {new Date(o.created_at).toLocaleString("es-CL", {
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  })}
+                                </p>
+                              </div>
+                              <p className="text-[9px] text-amber-600 mt-1 italic">
+                                La fecha fue actualizada al agregar el recibo de pago.
+                              </p>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div>
                               <h4 className="text-sm font-semibold text-slate-800">Notas de la orden</h4>
@@ -1101,6 +1318,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   );

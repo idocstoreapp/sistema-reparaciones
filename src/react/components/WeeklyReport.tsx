@@ -57,26 +57,57 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       // Las órdenes se asignan a una semana según cuando fueron pagadas, no cuando fueron creadas
       const currentPayout = getCurrentPayoutWeek();
 
-      const [{ data: orders }, { data: adjustmentData }, { data: settlementsData }] = await Promise.all([
-        supabase
+      // Consultar si hay liquidaciones registradas para esta semana
+      const { data: settlementsData } = await supabase
+        .from("salary_settlements")
+        .select("created_at")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO)
+        .order("created_at", { ascending: false });
+
+      // Fecha de la última liquidación de la semana (si existe)
+      const lastSettlementDate = settlementsData && settlementsData.length > 0
+        ? new Date(settlementsData[0].created_at)
+        : null;
+
+      // Consulta para órdenes de la semana
+      // ⚠️ CAMBIO CRÍTICO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
+      // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
+      let ordersQuery = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
         // Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
-        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()})`)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("salary_adjustments")
-          .select("*")
-          .eq("technician_id", technicianId)
-          .gte("created_at", start.toISOString())
-          .lte("created_at", end.toISOString())
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("salary_settlements")
-          .select("amount")
-          .eq("technician_id", technicianId)
-          .eq("week_start", weekStartISO),
+        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()})`);
+      
+      // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
+      if (lastSettlementDate) {
+        ordersQuery = ordersQuery.or(`and(status.eq.paid,paid_at.gte.${lastSettlementDate.toISOString()}),and(status.ne.paid,created_at.gte.${lastSettlementDate.toISOString()})`);
+      }
+
+      // Consulta para ajustes de la semana
+      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      let adjustmentsQuery = supabase
+        .from("salary_adjustments")
+        .select("*")
+        .eq("technician_id", technicianId)
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
+      
+      if (lastSettlementDate) {
+        adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+
+      // Consulta para liquidaciones (solo montos)
+      const { data: settlementsAmounts } = await supabase
+        .from("salary_settlements")
+        .select("amount")
+        .eq("technician_id", technicianId)
+        .eq("week_start", weekStartISO);
+
+      const [{ data: orders }, { data: adjustmentData }] = await Promise.all([
+        ordersQuery.order("created_at", { ascending: false }),
+        adjustmentsQuery.order("created_at", { ascending: false }),
       ]);
 
       if (orders) {
@@ -130,7 +161,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
       setSettledAmount(
-        (settlementsData as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
+        (settlementsAmounts as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
       );
     } finally {
       setLoading(false);
@@ -140,6 +171,22 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
 
   useEffect(() => {
     void loadData();
+    
+    // Escuchar eventos de liquidación y actualización de órdenes para refrescar el reporte
+    const handleSettlementCreated = () => {
+      void loadData();
+    };
+    
+    const handleOrderUpdated = () => {
+      void loadData();
+    };
+    
+    window.addEventListener('settlementCreated', handleSettlementCreated);
+    window.addEventListener('orderUpdated', handleOrderUpdated);
+    return () => {
+      window.removeEventListener('settlementCreated', handleSettlementCreated);
+      window.removeEventListener('orderUpdated', handleOrderUpdated);
+    };
   }, [loadData, refreshKey]);
 
   const totalAdjustments = useMemo(

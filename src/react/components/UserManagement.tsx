@@ -312,14 +312,8 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-900">Gestión de Usuarios</h3>
-          <p className="text-sm text-slate-600">
-            Administrar usuarios del sistema (solo administradores)
-          </p>
-        </div>
+    <div className="p-6 bg-white">
+      <div className="flex items-center justify-end mb-4">
         <button
           type="button"
           onClick={() => setIsCreateOpen(true)}

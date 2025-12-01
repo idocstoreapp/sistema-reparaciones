@@ -218,3 +218,58 @@ export async function checkOrderNumberExists(
   return (data?.length ?? 0) > 0;
 }
 
+/**
+ * Detecta duplicados en una lista de órdenes
+ * Retorna un mapa con los IDs de las órdenes que tienen duplicados y el tipo de duplicado
+ */
+export interface DuplicateInfo {
+  hasDuplicateOrderNumber: boolean;
+  hasDuplicateReceipt: boolean;
+}
+
+export function detectDuplicates(orders: Array<{ id: string; order_number: string; receipt_number?: string | null }>): Record<string, DuplicateInfo> {
+  const duplicates: Record<string, DuplicateInfo> = {};
+  
+  // Contar ocurrencias de números de orden
+  const orderNumberCounts: Record<string, string[]> = {};
+  // Contar ocurrencias de números de recibo (solo si no son null/empty)
+  const receiptNumberCounts: Record<string, string[]> = {};
+  
+  // Primera pasada: contar ocurrencias
+  orders.forEach((order) => {
+    const orderNum = order.order_number?.trim();
+    if (orderNum) {
+      if (!orderNumberCounts[orderNum]) {
+        orderNumberCounts[orderNum] = [];
+      }
+      orderNumberCounts[orderNum].push(order.id);
+    }
+    
+    const receiptNum = order.receipt_number?.trim();
+    if (receiptNum) {
+      if (!receiptNumberCounts[receiptNum]) {
+        receiptNumberCounts[receiptNum] = [];
+      }
+      receiptNumberCounts[receiptNum].push(order.id);
+    }
+  });
+  
+  // Segunda pasada: marcar duplicados
+  orders.forEach((order) => {
+    const orderNum = order.order_number?.trim();
+    const receiptNum = order.receipt_number?.trim();
+    
+    const hasDuplicateOrderNumber = orderNum ? (orderNumberCounts[orderNum]?.length ?? 0) > 1 : false;
+    const hasDuplicateReceipt = receiptNum ? (receiptNumberCounts[receiptNum]?.length ?? 0) > 1 : false;
+    
+    if (hasDuplicateOrderNumber || hasDuplicateReceipt) {
+      duplicates[order.id] = {
+        hasDuplicateOrderNumber,
+        hasDuplicateReceipt,
+      };
+    }
+  });
+  
+  return duplicates;
+}
+

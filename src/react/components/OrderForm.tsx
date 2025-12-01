@@ -5,6 +5,7 @@ import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
+import DeviceAutocomplete from "./DeviceAutocomplete";
 
 interface OrderFormProps {
   technicianId: string;
@@ -126,11 +127,11 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     // La fecha seleccionada viene en formato YYYY-MM-DD, crear Date en UTC
     const [year, month, day] = orderDate.split('-').map(Number);
     const createdAt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+    const now = new Date();
 
     // ⚠️ CAMBIO CRÍTICO: Si la orden se crea con recibo (status = 'paid'),
     // establecer paid_at, payout_week y payout_year basándose en la fecha actual
     // Estos campos se fijan permanentemente y nunca se recalculan
-    const now = new Date();
     const paidAt = status === "paid" ? now.toISOString() : null;
     const payoutWeek = status === "paid" ? calculatePayoutWeek(now) : null;
     const payoutYear = status === "paid" ? calculatePayoutYear(now) : null;
@@ -152,6 +153,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         status,
         commission_amount: commission, // Si no hay medio de pago, será 0
         created_at: createdAt.toISOString(),
+        original_created_at: now.toISOString(), // Fecha/hora real de creación (registro para admin)
         // Campos de semana de pago: se asignan cuando status = 'paid'
         paid_at: paidAt,
         payout_week: payoutWeek,
@@ -226,13 +228,15 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Equipo (Marca y Modelo) *</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Ej: iPhone 13 Pro"
+          <DeviceAutocomplete
             value={device}
-            onChange={(e) => setDevice(e.target.value)}
+            onChange={setDevice}
+            placeholder="Ej: iPhone 13 Pro"
             required
           />
+          <p className="text-xs text-slate-500 mt-1">
+            Empieza a escribir la marca o modelo para ver sugerencias automáticas (iPhone, Samsung, Huawei, MacBook, iPad, Apple Watch)
+          </p>
         </div>
         
         <div>

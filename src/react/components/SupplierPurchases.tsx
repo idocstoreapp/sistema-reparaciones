@@ -236,15 +236,9 @@ export default function SupplierPurchases() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="p-6 bg-white">
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Compras a Proveedores</h3>
-            <p className="text-sm text-slate-600">
-              Reporte detallado de repuestos comprados y gastos por proveedor
-            </p>
-          </div>
+        <div className="flex items-center justify-end">
           <div className="text-right space-y-2">
             <div className="text-sm text-slate-600">Total gastado en el período:</div>
             <div className="text-2xl font-bold text-brand">{formatCLP(totalSpent)}</div>

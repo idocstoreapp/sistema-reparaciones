@@ -14,6 +14,7 @@ export interface Profile {
 export interface Order {
   id: string;
   created_at: string;
+  original_created_at?: string | null;
   order_number: string;
   technician_id: string;
   supplier_id?: string | null;
@@ -77,7 +78,7 @@ export interface SalarySettlement {
   amount: number;
   note?: string | null;
   context?: "technician" | "admin";
-  payment_method?: "efectivo" | "transferencia" | "otro" | null;
+  payment_method?: "efectivo" | "transferencia" | "efectivo/transferencia" | null;
   details?: Record<string, any> | null;
   created_by?: string | null;
   created_at: string;
