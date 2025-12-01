@@ -171,3 +171,4 @@ Para verificar que funciona:
 3. Si el viernes es cierre, la orden debe aparecer en la semana actual
 4. Si se agrega recibo el sábado (nueva semana), debe tener `payout_week` de la nueva semana
 
+

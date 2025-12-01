@@ -260,3 +260,4 @@ const selectedPayoutYear = calculatePayoutYear(weekStart);
    - Órdenes existentes deben tener `payout_week` calculado
    - Los reportes deben funcionar con órdenes antiguas
 
+
