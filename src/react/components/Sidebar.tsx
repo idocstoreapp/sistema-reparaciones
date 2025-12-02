@@ -77,17 +77,19 @@ export default function Sidebar({ currentSection, onSectionChange, userRole }: S
       id: "payments",
       label: "Pago a Técnicos",
       icon: "💵",
-      adminOnly: true,
+      adminOnly: true, // El encargado ve esto dentro de su dashboard, no como sección separada
     },
     {
       id: "orders",
       label: "Órdenes de Reparación",
       icon: "🔧",
+      // Tanto admin como encargado pueden ver órdenes, pero el encargado solo ve las de su sucursal
     },
     {
       id: "branches",
       label: "Gestión de Sucursales y Gastos",
       icon: "🏢",
+      // Tanto admin como encargado pueden ver esto, pero el encargado solo ve/agrega gastos hormiga de su sucursal
     },
   ];
 

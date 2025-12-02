@@ -14,6 +14,34 @@ import SupplierPurchases from "./components/SupplierPurchases";
 import UserManagement from "./components/UserManagement";
 import TechnicianPayments from "./components/TechnicianPayments";
 
+// Componente helper para órdenes del encargado
+function OrdersTableForEncargado({ me }: { me: Profile }) {
+  const [branchId, setBranchId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadBranch() {
+      if (me.sucursal_id) {
+        setBranchId(me.sucursal_id);
+      }
+      setLoading(false);
+    }
+    loadBranch();
+  }, [me]);
+
+  if (loading || !branchId) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <p className="text-slate-600">Cargando...</p>
+      </div>
+    );
+  }
+
+  return (
+    <OrdersTable isAdmin={false} branchId={branchId} />
+  );
+}
+
 function Header({ userName, userRole }: { userName: string; userRole: string }) {
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -267,7 +295,11 @@ export default function Dashboard() {
                   : "Visualiza las órdenes de tu sucursal"}
               </p>
             </div>
-            <OrdersTable isAdmin={me.role === "admin"} />
+            {me.role === "admin" ? (
+              <OrdersTable isAdmin={true} />
+            ) : (
+              <OrdersTableForEncargado me={me} />
+            )}
           </div>
         );
       case "branches":

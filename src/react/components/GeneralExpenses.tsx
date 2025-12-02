@@ -359,41 +359,43 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
 
       {/* Resumen por tipo */}
       <div className="space-y-4">
-        {/* Tipos predefinidos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Arriendo</p>
-            <p className="text-xl font-bold text-slate-900 break-words">
+        {/* Tipos predefinidos - Layout mejorado */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Arriendo</p>
+            <p className="text-lg font-bold text-slate-900 leading-tight">
               {formatCLP(totalByType["arriendo"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Internet</p>
-            <p className="text-xl font-bold text-slate-900 break-words">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Internet</p>
+            <p className="text-lg font-bold text-slate-900 leading-tight">
               {formatCLP(totalByType["internet"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Luz</p>
-            <p className="text-xl font-bold text-slate-900 break-words">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Luz</p>
+            <p className="text-lg font-bold text-slate-900 leading-tight">
               {formatCLP(totalByType["luz"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Agua</p>
-            <p className="text-xl font-bold text-slate-900 break-words">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Agua</p>
+            <p className="text-lg font-bold text-slate-900 leading-tight">
               {formatCLP(totalByType["agua"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Facturas/Servicios</p>
-            <p className="text-xl font-bold text-slate-900 break-words">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">
+              Facturas/<br />Servicios
+            </p>
+            <p className="text-lg font-bold text-slate-900 leading-tight">
               {formatCLP((totalByType["facturas"] || 0) + (totalByType["servicios"] || 0))}
             </p>
           </div>
-          <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm">
-            <p className="text-sm font-medium text-slate-700 mb-2">Total</p>
-            <p className="text-xl font-bold text-brand break-words">
+          <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm min-h-[100px] flex flex-col justify-between">
+            <p className="text-xs font-semibold text-slate-700 mb-2 leading-tight">Total</p>
+            <p className="text-lg font-bold text-brand leading-tight">
               {formatCLP(total)}
             </p>
           </div>
@@ -403,11 +405,11 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
         {tiposPersonalizados.length > 0 && (
           <div>
             <p className="text-sm font-medium text-slate-700 mb-3">Tipos Personalizados:</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {tiposPersonalizados.map((tipo) => (
-                <div key={tipo} className="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
-                  <p className="text-sm font-medium text-slate-700 mb-2 break-words">{tipo}</p>
-                  <p className="text-xl font-bold text-slate-900 break-words">
+                <div key={tipo} className="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm min-h-[100px] flex flex-col justify-between">
+                  <p className="text-xs font-semibold text-slate-700 mb-2 leading-tight break-words">{tipo}</p>
+                  <p className="text-lg font-bold text-slate-900 leading-tight">
                     {formatCLP(totalByType[tipo] || 0)}
                   </p>
                 </div>

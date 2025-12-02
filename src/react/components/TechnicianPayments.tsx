@@ -8,9 +8,11 @@ import SalarySettlementPanel from "./SalarySettlementPanel";
 
 interface TechnicianPaymentsProps {
   refreshKey?: number;
+  branchId?: string; // Opcional: filtrar por sucursal
+  technicianIds?: string[]; // Opcional: lista de IDs de técnicos a mostrar
 }
 
-export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPaymentsProps) {
+export default function TechnicianPayments({ refreshKey = 0, branchId, technicianIds }: TechnicianPaymentsProps) {
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [technicianOptions, setTechnicianOptions] = useState<Profile[]>([]);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
@@ -100,11 +102,23 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
   }, [technicians.length, loadSettlementTechnicians]);
 
   const loadTechnicians = useCallback(async () => {
-    const { data } = await supabase
+    let query = supabase
       .from("users")
       .select("*")
-      .eq("role", "technician")
-      .order("name");
+      .eq("role", "technician");
+    
+    // Filtrar por sucursal si se proporciona
+    if (branchId) {
+      query = query.eq("sucursal_id", branchId);
+    }
+    
+    // Filtrar por lista de IDs si se proporciona
+    if (technicianIds && technicianIds.length > 0) {
+      query = query.in("id", technicianIds);
+    }
+    
+    const { data } = await query.order("name");
+    
     if (data) {
       setTechnicians(data);
       setTechnicianOptions(data);
@@ -117,7 +131,7 @@ export default function TechnicianPayments({ refreshKey = 0 }: TechnicianPayment
         return currentSelected;
       });
     }
-  }, []);
+  }, [branchId, technicianIds]);
 
   useEffect(() => {
     loadTechnicians();

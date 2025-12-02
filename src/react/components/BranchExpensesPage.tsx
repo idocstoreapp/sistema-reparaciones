@@ -28,6 +28,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
   const [loading, setLoading] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const [encargadoBranchId, setEncargadoBranchId] = useState<string | null>(null);
 
   // Filtros de fecha
   const currentMonth = currentMonthRange();
@@ -65,17 +66,22 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
   };
 
   useEffect(() => {
-    loadBranches();
     if (userRole === "admin") {
+      loadBranches();
       loadGlobalSummary();
+    } else {
+      // Encargado: cargar solo su sucursal
+      loadEncargadoBranch();
     }
   }, [combinedRefreshKey, userRole, filterMode, selectedMonth, dateRange]);
 
   useEffect(() => {
-    if (selectedBranch) {
+    if (userRole === "admin" && selectedBranch) {
       loadBranchSummary(selectedBranch);
+    } else if (userRole === "encargado" && encargadoBranchId) {
+      loadBranchSummary(encargadoBranchId);
     }
-  }, [selectedBranch, combinedRefreshKey, filterMode, selectedMonth, dateRange]);
+  }, [selectedBranch, encargadoBranchId, combinedRefreshKey, filterMode, selectedMonth, dateRange, userRole]);
 
   async function loadBranches() {
     setLoading(true);
@@ -93,6 +99,37 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
       }
     }
     setLoading(false);
+  }
+
+  async function loadEncargadoBranch() {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profileData } = await supabase
+        .from("users")
+        .select("sucursal_id")
+        .eq("id", user.id)
+        .single();
+
+      if (profileData?.sucursal_id) {
+        setEncargadoBranchId(profileData.sucursal_id);
+        const { data: branchData } = await supabase
+          .from("branches")
+          .select("*")
+          .eq("id", profileData.sucursal_id)
+          .single();
+        
+        if (branchData) {
+          setBranches([branchData]);
+        }
+      }
+    } catch (err) {
+      console.error("Error cargando sucursal del encargado:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadGlobalSummary() {
@@ -306,14 +343,19 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
     <div className="space-y-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
-          Gestión de Sucursales y Gastos
+          {userRole === "admin" 
+            ? "Gestión de Sucursales y Gastos"
+            : "Gastos Hormiga de tu Sucursal"}
         </h1>
         <p className="text-slate-600">
-          Administra sucursales, gastos hormiga, gastos generales y visualiza KPIs por sucursal
+          {userRole === "admin"
+            ? "Administra sucursales, gastos hormiga, gastos generales y visualiza KPIs por sucursal"
+            : "Gestiona los gastos hormiga de tu sucursal"}
         </p>
       </div>
 
-      {/* Filtros de Fecha */}
+      {/* Filtros de Fecha (solo admin) */}
+      {userRole === "admin" && (
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Filtros de Período</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -498,10 +540,10 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
       )}
 
       {/* Componentes de Gastos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gastos Hormiga */}
-        {userRole === "admin" ? (
-          selectedBranch ? (
+      {userRole === "admin" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Gastos Hormiga */}
+          {selectedBranch ? (
             <SmallExpenses
               sucursalId={selectedBranch}
               refreshKey={combinedRefreshKey}
@@ -511,18 +553,10 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
             <div className="bg-white rounded-lg shadow-md p-6">
               <p className="text-slate-600">Selecciona una sucursal para ver gastos hormiga</p>
             </div>
-          )
-        ) : (
-          <SmallExpenses
-            sucursalId={branches[0]?.id || ""}
-            refreshKey={combinedRefreshKey}
-            dateFilter={filterDates}
-          />
-        )}
+          )}
 
-        {/* Gastos Generales (solo admin) */}
-        {userRole === "admin" && (
-          selectedBranch ? (
+          {/* Gastos Generales (solo admin) */}
+          {selectedBranch ? (
             <GeneralExpenses
               sucursalId={selectedBranch}
               refreshKey={combinedRefreshKey}
@@ -532,9 +566,22 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
             <div className="bg-white rounded-lg shadow-md p-6">
               <p className="text-slate-600">Selecciona una sucursal para ver gastos generales</p>
             </div>
-          )
-        )}
-      </div>
+          )}
+        </div>
+      ) : (
+        // Encargado: solo puede ver/agregar gastos hormiga de su sucursal
+        encargadoBranchId ? (
+          <SmallExpenses
+            sucursalId={encargadoBranchId}
+            refreshKey={combinedRefreshKey}
+            dateFilter={filterDates}
+          />
+        ) : (
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <p className="text-slate-600">No tienes una sucursal asignada.</p>
+          </div>
+        )
+      )}
 
       {/* Botón para refrescar */}
       <div className="flex justify-end">

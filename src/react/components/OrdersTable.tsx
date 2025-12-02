@@ -13,6 +13,7 @@ interface OrdersTableProps {
   refreshKey?: number;
   onUpdate?: () => void;
   isAdmin?: boolean;
+  branchId?: string; // Opcional: filtrar por sucursal
 }
 
 type LoadFilters = {
@@ -20,7 +21,7 @@ type LoadFilters = {
   technicianIds?: string[];
 };
 
-export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false }: OrdersTableProps) {
+export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false, branchId }: OrdersTableProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<"all" | "paid" | "pending" | "returned" | "cancelled">("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "current_week" | "range">("all");
@@ -83,6 +84,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       `)
       .order("created_at", { ascending: false });
 
+    // Filtrar por sucursal si se proporciona
+    if (branchId) {
+      q = q.eq("sucursal_id", branchId);
+    }
+    
     if (filters?.technicianId) {
       q = q.eq("technician_id", filters.technicianId);
     } else if (filters?.technicianIds) {

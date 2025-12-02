@@ -1,19 +1,16 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatCLP } from "@/lib/currency";
 import type { Profile, Branch } from "@/types";
 import SmallExpenses from "./SmallExpenses";
-import KpiCard from "./KpiCard";
+import TechnicianPayments from "./TechnicianPayments";
+import OrdersTable from "./OrdersTable";
 
 export default function EncargadoDashboard() {
   const [me, setMe] = useState<Profile | null>(null);
   const [branch, setBranch] = useState<Branch | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [summary, setSummary] = useState({
-    total_small_expenses: 0,
-    total_repuestos: 0,
-  });
+  const [activeSection, setActiveSection] = useState<"expenses" | "payments" | "orders">("expenses");
 
   useEffect(() => {
     loadData();
@@ -45,7 +42,6 @@ export default function EncargadoDashboard() {
 
           if (branchData) {
             setBranch(branchData as Branch);
-            await loadSummary(branchData.id);
           }
         }
       }
@@ -53,34 +49,6 @@ export default function EncargadoDashboard() {
       console.error("Error cargando datos:", err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadSummary(branchId: string) {
-    try {
-      // Gastos hormiga de la sucursal
-      const { data: smallExpenses } = await supabase
-        .from("small_expenses")
-        .select("monto")
-        .eq("sucursal_id", branchId);
-
-      const total_small_expenses = (smallExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0);
-
-      // Repuestos de la sucursal (de órdenes pagadas)
-      const { data: orders } = await supabase
-        .from("orders")
-        .select("replacement_cost")
-        .eq("status", "paid")
-        .eq("sucursal_id", branchId);
-
-      const total_repuestos = (orders || []).reduce((sum, order) => sum + (order.replacement_cost || 0), 0);
-
-      setSummary({
-        total_small_expenses,
-        total_repuestos,
-      });
-    } catch (err) {
-      console.error("Error cargando resumen:", err);
     }
   }
 
@@ -112,26 +80,64 @@ export default function EncargadoDashboard() {
           Panel del Encargado
         </h1>
         <p className="text-slate-600">
-          {branch.name} • Gestiona los gastos hormiga de tu sucursal
+          {branch.name} • Gestión de tu sucursal
         </p>
       </div>
 
-      {/* KPIs de la Sucursal */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <KpiCard
-          title="Total Gastos Hormiga"
-          value={formatCLP(summary.total_small_expenses)}
-          icon="🐜"
-        />
-        <KpiCard
-          title="Total Repuestos"
-          value={formatCLP(summary.total_repuestos)}
-          icon="🔧"
-        />
+      {/* Navegación por secciones */}
+      <div className="bg-white rounded-lg shadow-md p-4">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setActiveSection("expenses")}
+            className={`px-4 py-2 rounded-md transition font-medium ${
+              activeSection === "expenses"
+                ? "bg-brand-light text-white"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            🐜 Gastos Hormiga
+          </button>
+          <button
+            onClick={() => setActiveSection("payments")}
+            className={`px-4 py-2 rounded-md transition font-medium ${
+              activeSection === "payments"
+                ? "bg-brand-light text-white"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            💵 Pago a Técnicos
+          </button>
+          <button
+            onClick={() => setActiveSection("orders")}
+            className={`px-4 py-2 rounded-md transition font-medium ${
+              activeSection === "orders"
+                ? "bg-brand-light text-white"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            🔧 Historial de Órdenes
+          </button>
+        </div>
       </div>
 
-      {/* Componente de Gastos Hormiga */}
-      <SmallExpenses sucursalId={branch.id} refreshKey={refreshKey} />
+      {/* Contenido según sección activa */}
+      {activeSection === "expenses" && (
+        <SmallExpenses sucursalId={branch.id} refreshKey={refreshKey} />
+      )}
+
+      {activeSection === "payments" && (
+        <TechnicianPaymentsForBranch 
+          branchId={branch.id} 
+          refreshKey={refreshKey} 
+        />
+      )}
+
+      {activeSection === "orders" && (
+        <OrdersTableForBranch 
+          branchId={branch.id} 
+          refreshKey={refreshKey} 
+        />
+      )}
 
       {/* Botón para refrescar */}
       <div className="flex justify-end">
@@ -142,6 +148,81 @@ export default function EncargadoDashboard() {
           🔄 Actualizar Datos
         </button>
       </div>
+    </div>
+  );
+}
+
+// Componente para pagos a técnicos filtrado por sucursal
+function TechnicianPaymentsForBranch({ branchId, refreshKey }: { branchId: string; refreshKey: number }) {
+  const [technicians, setTechnicians] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTechnicians();
+  }, [branchId, refreshKey]);
+
+  async function loadTechnicians() {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("role", "technician")
+        .eq("sucursal_id", branchId)
+        .order("name");
+
+      if (error) throw error;
+      setTechnicians(data || []);
+    } catch (err) {
+      console.error("Error cargando técnicos:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <p className="text-slate-600">Cargando técnicos...</p>
+      </div>
+    );
+  }
+
+  if (technicians.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <p className="text-slate-600">No hay técnicos asignados a esta sucursal.</p>
+      </div>
+    );
+  }
+
+  // Usar el componente TechnicianPayments pero filtrando solo técnicos de esta sucursal
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-4">
+        Pago a Técnicos de tu Sucursal
+      </h2>
+      <TechnicianPayments 
+        refreshKey={refreshKey} 
+        branchId={branchId}
+        technicianIds={technicians.map(t => t.id)}
+      />
+    </div>
+  );
+}
+
+// Componente para órdenes filtradas por sucursal
+function OrdersTableForBranch({ branchId, refreshKey }: { branchId: string; refreshKey: number }) {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-4">
+        Historial de Órdenes de tu Sucursal
+      </h2>
+      <OrdersTable 
+        isAdmin={false}
+        branchId={branchId}
+        refreshKey={refreshKey}
+      />
     </div>
   );
 }
