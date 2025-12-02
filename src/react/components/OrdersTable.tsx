@@ -4,7 +4,7 @@ import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
-import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, generateBsaleUrl, buildBsalePdfUrl, type DuplicateInfo } from "@/lib/bsale";
+// Bsale integration removed - now using manual receipt URL
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
 
@@ -38,6 +38,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCostsId, setEditingCostsId] = useState<string | null>(null);
   const [editReceipt, setEditReceipt] = useState("");
+  const [editReceiptUrl, setEditReceiptUrl] = useState("");
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>("");
   const [editReceiptDate, setEditReceiptDate] = useState<string>("");
   const [editReplacementCost, setEditReplacementCost] = useState<number>(0);
@@ -59,7 +60,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [hasAdminSearched, setHasAdminSearched] = useState(!isAdmin);
   const [adminActiveFilters, setAdminActiveFilters] = useState<LoadFilters | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
-  const [duplicates, setDuplicates] = useState<Record<string, DuplicateInfo>>({});
+  const [duplicates, setDuplicates] = useState<Record<string, { hasDuplicateReceipt: boolean }>>({});
 
   const localOptions = useMemo(() => {
     const locales = new Set<string>();
@@ -125,17 +126,45 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     if (error) {
       console.error("Error loading orders:", error);
+      console.error("Detalles del error:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       setOrders([]);
       setDuplicates({});
+      // Si es admin y hay error, mostrar mensaje
+      if (isAdmin) {
+        setAdminError(`Error al cargar órdenes: ${error.message}. Revisa la consola para más detalles.`);
+      }
     } else {
       const loadedOrders = (data as Order[]) ?? [];
       setOrders(loadedOrders);
-      // Detectar duplicados después de cargar las órdenes
-      const detectedDuplicates = detectDuplicates(loadedOrders);
+      // Detectar duplicados de receipt_number
+      const receiptCounts: Record<string, string[]> = {};
+      loadedOrders.forEach(order => {
+        if (order.receipt_number && order.receipt_number.trim()) {
+          const receipt = order.receipt_number.trim();
+          if (!receiptCounts[receipt]) {
+            receiptCounts[receipt] = [];
+          }
+          receiptCounts[receipt].push(order.id);
+        }
+      });
+      
+      const detectedDuplicates: Record<string, { hasDuplicateReceipt: boolean }> = {};
+      Object.entries(receiptCounts).forEach(([receipt, orderIds]) => {
+        if (orderIds.length > 1) {
+          orderIds.forEach(orderId => {
+            detectedDuplicates[orderId] = { hasDuplicateReceipt: true };
+          });
+        }
+      });
       setDuplicates(detectedDuplicates);
     }
     setLoading(false);
-  }, [technicianId, isAdmin]);
+  }, [technicianId, isAdmin, branchId, technicianIds, weekFilter]);
 
   const refreshOrders = useCallback(() => {
     if (isAdmin) {
@@ -241,7 +270,15 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     setHasAdminSearched(true);
     setAdminActiveFilters(filters);
-    await load(filters);
+    setLoading(true);
+    try {
+      await load(filters);
+    } catch (err) {
+      console.error("Error en búsqueda de órdenes:", err);
+      setAdminError("Error al cargar las órdenes. Intenta nuevamente.");
+      setOrders([]);
+      setLoading(false);
+    }
   }
 
   function handleAdminReset() {
@@ -338,35 +375,22 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     // también debemos verificar si necesita actualizar la fecha a la semana actual
     const isUpdatingReceipt = hasReceipt && currentOrder.receipt_number;
     
-    // Validar número de boleta con Bsale solo si se proporciona un recibo (OPCIONAL - no bloquea si falla)
-    let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
-    
+    // Verificar duplicados (permitir pero mostrar advertencia)
+    let hasDuplicateReceipt = false;
     if (hasReceipt) {
-      // ⚠️ VALIDACIÓN OBLIGATORIA: Validar con Bsale y bloquear si la factura no existe
-      try {
-        const bsaleValidation = await validateBsaleDocument(editReceipt.trim(), true);
-        
-        // Si la validación falla, mostrar error y bloquear la actualización
-        if (!bsaleValidation.exists || !bsaleValidation.document) {
-          const errorMessage = bsaleValidation.error || "El número de factura no existe en Bsale. Por favor, verifica que el número sea correcto.";
-          alert(`❌ ${errorMessage}`);
+      const { data: duplicateOrders } = await supabase
+        .from("orders")
+        .select("id, receipt_number")
+        .eq("receipt_number", editReceipt.trim())
+        .neq("id", orderId);
+      
+      hasDuplicateReceipt = duplicateOrders && duplicateOrders.length > 0;
+      
+      if (hasDuplicateReceipt) {
+        const confirmMessage = `⚠️ Este número de recibo ya está registrado en ${duplicateOrders.length} otra(s) orden(es). ¿Deseas continuar de todas formas?`;
+        if (!window.confirm(confirmMessage)) {
           return;
         }
-        
-        // Si la validación fue exitosa, usar los datos de Bsale
-        bsaleData = bsaleValidation.document;
-      } catch (error) {
-        // Si hay un error de conexión, mostrar mensaje y bloquear
-        const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-        alert(`❌ Error al validar la factura con Bsale: ${errorMessage}\n\nPor favor, verifica tu conexión a internet e intenta nuevamente.`);
-        return;
-      }
-
-      // Verificar duplicados en la base de datos solo si hay recibo (excluyendo la orden actual)
-      const isDuplicate = await checkReceiptNumberExists(editReceipt.trim(), orderId);
-      if (isDuplicate) {
-        alert("⚠️ Este número de boleta ya está registrado en otra orden");
-        return;
       }
     }
 
@@ -397,9 +421,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       status: string;
       commission_amount: number;
       receipt_number?: string | null;
-      bsale_number?: string | null;
-      bsale_url?: string | null;
-      bsale_total_amount?: number | null;
+      receipt_url?: string | null;
       paid_at?: string | null;
       payout_week?: number | null;
       payout_year?: number | null;
@@ -416,10 +438,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     // Solo actualizar recibo si se proporciona
     if (hasReceipt) {
       updateData.receipt_number = editReceipt.trim();
-      updateData.bsale_number = bsaleData?.number || null;
-      updateData.bsale_url = bsaleData?.url || null;
-      updateData.bsale_id = bsaleData?.id || null; // ID del documento para construir URL del PDF
-      updateData.bsale_total_amount = bsaleData?.totalAmount || null;
+      updateData.receipt_url = editReceiptUrl.trim() || null;
 
       // Si se proporcionó una fecha de recibo, verificar si es diferente a la fecha original
       // y si cae en una semana diferente, actualizar la fecha de la orden
@@ -521,11 +540,16 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         console.log(`✅ Orden ${currentOrder.order_number} actualizada: fecha cambiada de ${orderDate.toLocaleDateString('es-CL')} a ${newDate.toLocaleDateString('es-CL')} (nueva semana)`);
         alert(`✅ Orden actualizada. La fecha se ajustó a la semana de la fecha del recibo (${newDate.toLocaleDateString('es-CL')}).`);
       } else {
-        console.log(`✅ Recibo agregado/modificado a orden ${currentOrder.order_number}`);
+        if (hasDuplicateReceipt) {
+          alert(`✅ Orden actualizada. ⚠️ Advertencia: Este número de recibo está duplicado en otra(s) orden(es).`);
+        } else {
+          console.log(`✅ Recibo agregado/modificado a orden ${currentOrder.order_number}`);
+        }
       }
 
       setEditingId(null);
       setEditReceipt("");
+      setEditReceiptUrl("");
       setEditPaymentMethod("");
       setEditReceiptDate("");
       
@@ -940,8 +964,8 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                   ⚠️ Advertencia: Se detectaron órdenes con datos duplicados
                 </p>
                 <p className="text-xs text-amber-700">
-                  Hay {visibleDuplicates.length} orden(es) visible(s) con números de orden o recibos repetidos. 
-                  Las filas afectadas están resaltadas en amarillo con un ícono ⚠️.
+                  Hay {visibleDuplicates.length} orden(es) visible(s) con números de recibo repetidos. 
+                  Las órdenes afectadas muestran una advertencia discreta.
                 </p>
               </div>
             );
@@ -1018,23 +1042,15 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                         {o.receipt_number && (
                           <span className="text-[10px] text-slate-500">
                             Recibo: {(() => {
-                              // Construir URL correcta: priorizar bsale_id
-                              let bsaleLink: string | null = null;
-                              if (o.bsale_id) {
-                                bsaleLink = buildBsalePdfUrl(o.bsale_id);
-                              } else if (o.bsale_url && o.bsale_url.includes('app2.bsale.cl/documents/show/')) {
-                                bsaleLink = o.bsale_url;
-                              } else if (o.bsale_url) {
-                                bsaleLink = o.bsale_url;
-                              }
+                              const receiptLink = o.receipt_url;
                               
-                              return bsaleLink ? (
+                              return receiptLink ? (
                                 <a
-                                  href={bsaleLink}
+                                  href={receiptLink}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
-                                  title="Abrir documento en Bsale"
+                                  title="Abrir recibo"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   {o.receipt_number}
@@ -1117,6 +1133,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           placeholder="N° Boleta (opcional)"
                           autoFocus
                         />
+                        <input
+                          type="url"
+                          className="w-full border border-slate-300 rounded px-1.5 py-0.5 text-xs"
+                          value={editReceiptUrl}
+                          onChange={(e) => setEditReceiptUrl(e.target.value)}
+                          placeholder="Link del recibo (opcional)"
+                        />
                         <select
                           className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
                           value={editPaymentMethod || o.payment_method || ""}
@@ -1141,48 +1164,28 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       </div>
                     ) : o.receipt_number ? (
                       <div className="flex items-center gap-1">
-                        {(() => {
-                          // Construir URL correcta: priorizar bsale_id para construir URL web correcta
-                          // Formato: https://app2.bsale.cl/documents/show/{id}
-                          let bsaleLink: string | null = null;
-                          if (o.bsale_id) {
-                            // Si tenemos bsale_id, construir la URL web correcta
-                            bsaleLink = buildBsalePdfUrl(o.bsale_id);
-                          } else if (o.bsale_url && o.bsale_url.includes('app2.bsale.cl/documents/show/')) {
-                            // Si bsale_url ya tiene el formato correcto, usarlo
-                            bsaleLink = o.bsale_url;
-                          } else if (o.bsale_url) {
-                            // Si hay bsale_url pero no tiene el formato correcto, construir uno nuevo
-                            // (pero solo si no tenemos bsale_id)
-                            bsaleLink = o.bsale_url;
-                          } else {
-                            // Fallback: URL de búsqueda
-                            bsaleLink = generateBsaleUrl(o.receipt_number);
-                          }
-                          
-                          return bsaleLink ? (
-                            <a
-                              href={bsaleLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
-                              title={o.bsale_id ? "Abrir documento en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
-                            >
-                              {o.receipt_number}
-                              <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          ) : (
-                            <span className="text-slate-700 text-xs">{o.receipt_number}</span>
-                          );
-                        })()}
+                        {o.receipt_url ? (
+                          <a
+                            href={o.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
+                            title="Abrir recibo (se abre en nueva pestaña)"
+                          >
+                            {o.receipt_number}
+                            <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                        )}
                         {duplicates[o.id]?.hasDuplicateReceipt && (
                           <span 
-                            className="text-amber-600 cursor-help font-bold" 
-                            title="⚠️ Este número de recibo está duplicado"
+                            className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-medium rounded border border-amber-200"
+                            title="⚠️ Este número de recibo está duplicado en otra orden"
                           >
-                            ⚠️
+                            ⚠️ Duplicado
                           </span>
                         )}
                       </div>
@@ -1238,6 +1241,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                 onClick={() => {
                                   setEditingId(null);
                                   setEditReceipt("");
+                                  setEditReceiptUrl("");
                                   setEditPaymentMethod("");
                                   setEditReceiptDate("");
                                 }}
@@ -1266,6 +1270,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                                   onClick={() => {
                                     setEditingId(o.id);
                                     setEditReceipt(o.receipt_number || "");
+                                    setEditReceiptUrl(o.receipt_url || "");
                                     setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
                                     // Inicializar con la fecha de hoy o la fecha original de la orden
                                     const today = new Date().toISOString().split('T')[0];

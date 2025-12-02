@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
-import { buildBsalePdfUrl } from "@/lib/bsale";
+// Bsale integration removed - now using manual receipt URL
 import type { Order, Profile } from "@/types";
 
 export default function AdminReports() {
@@ -66,7 +66,7 @@ export default function AdminReports() {
       // Obtener todas las órdenes pagadas en ese rango (igual que en loadWeeklyReport)
       let ordersQuery = supabase
         .from("orders")
-        .select("id, technician_id, created_at, commission_amount, week_start, status, receipt_number, bsale_url, bsale_number")
+        .select("id, technician_id, created_at, commission_amount, week_start, status, receipt_number")
         .eq("status", "paid")
         .gte("created_at", startUTC.toISOString())
         .lte("created_at", endUTC.toISOString());
@@ -265,7 +265,7 @@ export default function AdminReports() {
 
     let q = supabase
       .from("orders")
-      .select("*, original_created_at, receipt_number, bsale_url, bsale_id, bsale_number, technician:users!technician_id(name), suppliers(id, name)")
+      .select("*, original_created_at, receipt_number, technician:users!technician_id(name), suppliers(id, name)")
       .order("created_at", { ascending: false });
 
     // Aplicar filtro de técnico
@@ -303,8 +303,58 @@ export default function AdminReports() {
     }
     // Si es "all", no aplicar filtro de fecha
 
-    const { data } = await q;
-    setWeeklyOrders((data as Order[]) ?? []);
+    const { data, error } = await q;
+    
+    if (error) {
+      console.error("Error cargando reporte administrativo:", error);
+      // Si el error es por columna faltante (receipt_url), intentar sin él
+      if (error.message?.includes("receipt_url") || error.code === "42703") {
+        console.warn("⚠️ Campo receipt_url no existe, intentando sin él...");
+        let q2 = supabase
+          .from("orders")
+          .select("*, original_created_at, receipt_number, technician:users!technician_id(name), suppliers(id, name)")
+          .order("created_at", { ascending: false });
+        
+        // Aplicar los mismos filtros
+        if (selectedTechnician !== "all") {
+          q2 = q2.eq("technician_id", selectedTechnician);
+        }
+        if (selectedStatus !== "all") {
+          q2 = q2.eq("status", selectedStatus);
+        }
+        if (dateRangeFilter === "week") {
+          const { start, end } = currentWeekRange(weekStart);
+          q2 = q2.gte("created_at", start.toISOString())
+               .lte("created_at", end.toISOString());
+        } else if (dateRangeFilter === "custom") {
+          if (customStartDate) {
+            const [year, month, day] = customStartDate.split('-').map(Number);
+            const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+            q2 = q2.gte("created_at", start.toISOString());
+          }
+          if (customEndDate) {
+            const [year, month, day] = customEndDate.split('-').map(Number);
+            const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+            q2 = q2.lte("created_at", end.toISOString());
+          }
+        }
+        
+        const { data: data2, error: error2 } = await q2;
+        if (error2) {
+          console.error("❌ Error en segunda consulta:", error2);
+          setWeeklyOrders([]);
+          setLoading(false);
+          return;
+        }
+        setWeeklyOrders((data2 as Order[]) ?? []);
+      } else {
+        console.error("❌ Error desconocido:", error);
+        setWeeklyOrders([]);
+      }
+    } else {
+      setWeeklyOrders((data as Order[]) ?? []);
+    }
+    
     setLoading(false);
     
     // Calcular liquidaciones automáticas si hay un rango de fechas seleccionado
@@ -538,13 +588,13 @@ export default function AdminReports() {
                       <td className="py-2 px-2 text-xs">{o.payment_method || "-"}</td>
                       <td className="py-2 px-2 text-xs">
                         {o.receipt_number ? (
-                          (o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id))) ? (
+                          o.receipt_url ? (
                             <a
-                              href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || "#"}
+                              href={o.receipt_url}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:text-blue-800 hover:underline font-medium flex items-center gap-1"
-                              title="Abrir PDF de la factura en Bsale (se abre en nueva pestaña)"
+                              title="Abrir recibo (se abre en nueva pestaña)"
                             >
                               {o.receipt_number}
                               <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

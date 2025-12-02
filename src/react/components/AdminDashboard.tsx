@@ -7,7 +7,7 @@ import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
 import AdminReports from "./AdminReports";
-import UpdateBsaleUrls from "./UpdateBsaleUrls";
+// UpdateBsaleUrls component removed - Bsale integration removed
 
 export default function AdminDashboard() {
   const [kpis, setKpis] = useState({
@@ -125,13 +125,6 @@ export default function AdminDashboard() {
       </div>
 
       <AdminReports key={refreshKey} />
-
-      {/* Card para Actualizar URLs de Bsale */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="border-t border-slate-200 p-6">
-          <UpdateBsaleUrls />
-        </div>
-      </div>
     </div>
   );
 }

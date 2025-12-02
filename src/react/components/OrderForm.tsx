@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { calcCommission } from "@/lib/commission";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
-import { validateBsaleDocument, checkReceiptNumberExists } from "@/lib/bsale";
+// Bsale integration removed - now using manual receipt URL
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
 import DeviceAutocomplete from "./DeviceAutocomplete";
@@ -39,6 +39,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
   };
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("");
   const [receiptNumber, setReceiptNumber] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState("");
   const [initialNote, setInitialNote] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
@@ -125,38 +126,22 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       return;
     }
 
-    // Validar número de boleta con Bsale solo si se proporciona un recibo (OPCIONAL - no bloquea si falla)
-    let bsaleData: { number?: string; url?: string; totalAmount?: number } | null = null;
-    
+    // Verificar duplicados (permitir pero mostrar advertencia)
+    let hasDuplicateReceipt = false;
     if (hasReceipt) {
-      // Verificar duplicados en la base de datos
-      const isDuplicate = await checkReceiptNumberExists(receiptNumber.trim());
-      if (isDuplicate) {
-        alert("⚠️ Este número de boleta ya está registrado en otra orden");
-        setLoading(false);
-        return;
-      }
-
-      // ⚠️ VALIDACIÓN OBLIGATORIA: Validar con Bsale y bloquear si la factura no existe
-      try {
-        const bsaleValidation = await validateBsaleDocument(receiptNumber.trim(), true);
-        
-        // Si la validación falla, mostrar error y bloquear el guardado
-        if (!bsaleValidation.exists || !bsaleValidation.document) {
-          const errorMessage = bsaleValidation.error || "El número de factura no existe en Bsale. Por favor, verifica que el número sea correcto.";
-          alert(`❌ ${errorMessage}`);
+      const { data: duplicateOrders } = await supabase
+        .from("orders")
+        .select("id, receipt_number")
+        .eq("receipt_number", receiptNumber.trim());
+      
+      hasDuplicateReceipt = duplicateOrders && duplicateOrders.length > 0;
+      
+      if (hasDuplicateReceipt) {
+        const confirmMessage = `⚠️ Este número de recibo ya está registrado en ${duplicateOrders.length} otra(s) orden(es). ¿Deseas continuar de todas formas?`;
+        if (!window.confirm(confirmMessage)) {
           setLoading(false);
           return;
         }
-        
-        // Si la validación fue exitosa, usar los datos de Bsale
-        bsaleData = bsaleValidation.document;
-      } catch (error) {
-        // Si hay un error de conexión, mostrar mensaje y bloquear
-        const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-        alert(`❌ Error al validar la factura con Bsale: ${errorMessage}\n\nPor favor, verifica tu conexión a internet e intenta nuevamente.`);
-        setLoading(false);
-        return;
       }
     }
 
@@ -202,11 +187,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         paid_at: paidAt,
         payout_week: payoutWeek,
         payout_year: payoutYear,
-        // Campos de Bsale: extraídos automáticamente al validar el recibo
-        bsale_number: bsaleData?.number || null,
-        bsale_url: bsaleData?.url || null,
-        bsale_id: bsaleData?.id || null, // ID del documento para construir URL del PDF
-        bsale_total_amount: bsaleData?.totalAmount || null,
+        // Campo de URL del recibo (ingresado manualmente)
+        receipt_url: receiptUrl.trim() || null,
         // Campo de sucursal: heredado del técnico
         sucursal_id: technician?.sucursal_id || null,
       })
@@ -218,6 +200,10 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     if (error) {
       alert(`Error: ${error.message}`);
     } else {
+      if (hasDuplicateReceipt) {
+        alert(`✅ Orden creada exitosamente. ⚠️ Advertencia: Este número de recibo está duplicado en otra(s) orden(es).`);
+      }
+      
       if (createdOrder && initialNote.trim()) {
         const { error: noteError } = await supabase.from("order_notes").insert({
           order_id: createdOrder.id,
@@ -242,6 +228,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       setPrecioTotal(0);
       setPaymentMethod("");
       setReceiptNumber("");
+      setReceiptUrl("");
       setInitialNote("");
     }
   }
@@ -437,12 +424,26 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
           <label className="block text-sm font-medium text-slate-700 mb-1">N° Recibo/Boleta (Opcional)</label>
           <input
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Puedes agregarlo después desde la tabla de órdenes"
+            placeholder="Ej: 12345"
             value={receiptNumber}
             onChange={(e) => setReceiptNumber(e.target.value)}
           />
           <p className="text-xs text-slate-500 mt-1">
-            Puedes guardar la orden sin recibo. La orden quedará como pendiente hasta que agregues el número de boleta desde la tabla de órdenes
+            Puedes guardar la orden sin recibo. La orden quedará como pendiente hasta que agregues el número de boleta
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Link del Recibo (Opcional)</label>
+          <input
+            className="w-full border border-slate-300 rounded-md px-3 py-2"
+            type="url"
+            placeholder="https://..."
+            value={receiptUrl}
+            onChange={(e) => setReceiptUrl(e.target.value)}
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            URL del recibo/boleta. Se mostrará como enlace al hacer clic en el número de recibo
           </p>
         </div>
 

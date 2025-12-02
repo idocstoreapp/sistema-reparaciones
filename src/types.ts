@@ -25,6 +25,7 @@ export interface Order {
   repair_cost: number;
   payment_method: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "";
   receipt_number?: string | null;
+  receipt_url?: string | null; // URL del recibo ingresada manualmente
   status: "pending" | "paid" | "returned" | "cancelled";
   commission_amount: number;
   // Campos de semana de pago - se asignan cuando status = 'paid' y nunca se recalculan
@@ -35,11 +36,6 @@ export interface Order {
   week_start?: string | null;
   month?: number | null;
   year?: number | null;
-  // Campos de Bsale - extraídos automáticamente al validar el recibo
-  bsale_number?: string | null;
-  bsale_url?: string | null;
-  bsale_id?: number | null; // ID del documento en Bsale (necesario para construir URL del PDF)
-  bsale_total_amount?: number | null;
   // Campo de sucursal
   sucursal_id?: string | null;
 }
