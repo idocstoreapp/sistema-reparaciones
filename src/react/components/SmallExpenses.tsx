@@ -13,9 +13,10 @@ interface SmallExpensesProps {
     startDate: Date;
     endDate: Date;
   };
+  hideKPIs?: boolean; // Para ocultar KPIs cuando se usa desde EncargadoDashboard
 }
 
-export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter }: SmallExpensesProps) {
+export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, hideKPIs = false }: SmallExpensesProps) {
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [localDateFilter, setLocalDateFilter] = useState<{
     start: string;
@@ -316,7 +317,8 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter }
         </form>
       )}
 
-      {/* Resumen por tipo */}
+      {/* Resumen por tipo - Solo mostrar si hideKPIs es false */}
+      {!hideKPIs && (
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-slate-50 p-3 rounded">
           <p className="text-xs text-slate-600">Aseo</p>
@@ -343,6 +345,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter }
           </p>
         </div>
       </div>
+      )}
 
       {/* Tabla de gastos */}
       <div className="overflow-x-auto">

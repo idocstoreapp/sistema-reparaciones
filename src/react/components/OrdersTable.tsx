@@ -14,6 +14,13 @@ interface OrdersTableProps {
   onUpdate?: () => void;
   isAdmin?: boolean;
   branchId?: string; // Opcional: filtrar por sucursal
+  technicianIds?: string[]; // Opcional: lista de IDs de técnicos
+  weekFilter?: { // Opcional: filtro de semana de pago
+    payoutWeek: number;
+    payoutYear: number;
+    weekStart: Date;
+    weekEnd: Date;
+  };
 }
 
 type LoadFilters = {
@@ -21,7 +28,7 @@ type LoadFilters = {
   technicianIds?: string[];
 };
 
-export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false, branchId }: OrdersTableProps) {
+export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, isAdmin = false, branchId, technicianIds, weekFilter }: OrdersTableProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<"all" | "paid" | "pending" | "returned" | "cancelled">("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "current_week" | "range">("all");
@@ -98,8 +105,20 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         return;
       }
       q = q.in("technician_id", filters.technicianIds);
+    } else if (technicianIds && technicianIds.length > 0) {
+      q = q.in("technician_id", technicianIds);
     } else if (technicianId) {
       q = q.eq("technician_id", technicianId);
+    }
+
+    // Aplicar filtro de semana de pago si se proporciona
+    if (weekFilter) {
+      // Para órdenes pagadas: filtrar por payout_week y payout_year
+      // Para órdenes pendientes: filtrar por created_at dentro del rango de la semana
+      q = q.or(
+        `and(status.eq.paid,payout_week.eq.${weekFilter.payoutWeek},payout_year.eq.${weekFilter.payoutYear}),` +
+        `and(status.eq.pending,created_at.gte.${weekFilter.weekStart.toISOString()},created_at.lte.${weekFilter.weekEnd.toISOString()})`
+      );
     }
 
     const { data, error } = await q;
