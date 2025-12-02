@@ -356,85 +356,86 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
 
       {/* Filtros de Fecha (solo admin) */}
       {userRole === "admin" && (
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">Filtros de Período</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Modo de Filtro
-            </label>
-            <select
-              value={filterMode}
-              onChange={(e) => setFilterMode(e.target.value as FilterMode)}
-              className="w-full border border-slate-300 rounded-md px-3 py-2"
-            >
-              <option value="month">Por Mes</option>
-              <option value="range">Por Rango de Fechas</option>
-            </select>
-          </div>
-
-          {filterMode === "month" ? (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Filtros de Período</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Seleccionar Mes
+                Modo de Filtro
               </label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+              <select
+                value={filterMode}
+                onChange={(e) => setFilterMode(e.target.value as FilterMode)}
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-              />
+              >
+                <option value="month">Por Mes</option>
+                <option value="range">Por Rango de Fechas</option>
+              </select>
             </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Fecha Inicio
-                </label>
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Fecha Fin
-                </label>
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2"
-                />
-              </div>
-            </>
-          )}
 
-          <div className="flex items-end">
-            <button
-              onClick={() => {
-                const currentMonth = currentMonthRange();
-                setFilterMode("month");
-                setSelectedMonth(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
-                setDateRange({
-                  start: currentMonth.start.toISOString().split("T")[0],
-                  end: currentMonth.end.toISOString().split("T")[0],
-                });
-              }}
-              className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 transition font-medium"
-            >
-              Mes Actual
-            </button>
+            {filterMode === "month" ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Seleccionar Mes
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Fecha Inicio
+                  </label>
+                  <input
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Fecha Fin
+                  </label>
+                  <input
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  const currentMonth = currentMonthRange();
+                  setFilterMode("month");
+                  setSelectedMonth(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
+                  setDateRange({
+                    start: currentMonth.start.toISOString().split("T")[0],
+                    end: currentMonth.end.toISOString().split("T")[0],
+                  });
+                }}
+                className="w-full px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 transition font-medium"
+              >
+                Mes Actual
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-brand-light/10 rounded-md">
+            <p className="text-sm font-medium text-slate-700">
+              📅 Período seleccionado: <span className="text-brand">{filterLabel}</span>
+            </p>
           </div>
         </div>
-        <div className="mt-4 p-3 bg-brand-light/10 rounded-md">
-          <p className="text-sm font-medium text-slate-700">
-            📅 Período seleccionado: <span className="text-brand">{filterLabel}</span>
-          </p>
-        </div>
-      </div>
+      )}
 
       {/* KPIs Globales (solo admin) */}
       {userRole === "admin" && (
