@@ -4,7 +4,7 @@ import { formatDate, currentWeekRange } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
-import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, generateBsaleUrl, type DuplicateInfo } from "@/lib/bsale";
+import { validateBsaleDocument, checkReceiptNumberExists, detectDuplicates, generateBsaleUrl, buildBsalePdfUrl, type DuplicateInfo } from "@/lib/bsale";
 import { calcCommission } from "@/lib/commission";
 import type { PaymentMethod } from "@/lib/commission";
 
@@ -992,23 +992,35 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                         <span className="truncate" title={o.service_description}>{o.service_description}</span>
                         {o.receipt_number && (
                           <span className="text-[10px] text-slate-500">
-                            Recibo: {(o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id))) ? (
-                              <a
-                                href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || "#"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
-                                title="Abrir PDF de la factura en Bsale"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {o.receipt_number}
-                                <svg className="w-2.5 h-2.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                              </a>
-                            ) : (
-                              <span className="text-slate-600">{o.receipt_number}</span>
-                            )}
+                            Recibo: {(() => {
+                              // Construir URL correcta: priorizar bsale_id
+                              let bsaleLink: string | null = null;
+                              if (o.bsale_id) {
+                                bsaleLink = buildBsalePdfUrl(o.bsale_id);
+                              } else if (o.bsale_url && o.bsale_url.includes('app2.bsale.cl/documents/show/')) {
+                                bsaleLink = o.bsale_url;
+                              } else if (o.bsale_url) {
+                                bsaleLink = o.bsale_url;
+                              }
+                              
+                              return bsaleLink ? (
+                                <a
+                                  href={bsaleLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
+                                  title="Abrir documento en Bsale"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {o.receipt_number}
+                                  <svg className="w-2.5 h-2.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              ) : (
+                                <span className="text-slate-600">{o.receipt_number}</span>
+                              );
+                            })()}
                           </span>
                         )}
                       </div>
@@ -1104,22 +1116,42 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       </div>
                     ) : o.receipt_number ? (
                       <div className="flex items-center gap-1">
-                        {(o.bsale_url || (o.bsale_id && buildBsalePdfUrl(o.bsale_id)) || generateBsaleUrl(o.receipt_number)) ? (
-                          <a
-                            href={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) || generateBsaleUrl(o.receipt_number) || "#"}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
-                            title={o.bsale_url || (o.bsale_id ? buildBsalePdfUrl(o.bsale_id) : null) ? "Abrir PDF de la factura en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
-                          >
-                            {o.receipt_number}
-                            <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                        ) : (
-                          <span className="text-slate-700 text-xs">{o.receipt_number}</span>
-                        )}
+                        {(() => {
+                          // Construir URL correcta: priorizar bsale_id para construir URL web correcta
+                          // Formato: https://app2.bsale.cl/documents/show/{id}
+                          let bsaleLink: string | null = null;
+                          if (o.bsale_id) {
+                            // Si tenemos bsale_id, construir la URL web correcta
+                            bsaleLink = buildBsalePdfUrl(o.bsale_id);
+                          } else if (o.bsale_url && o.bsale_url.includes('app2.bsale.cl/documents/show/')) {
+                            // Si bsale_url ya tiene el formato correcto, usarlo
+                            bsaleLink = o.bsale_url;
+                          } else if (o.bsale_url) {
+                            // Si hay bsale_url pero no tiene el formato correcto, construir uno nuevo
+                            // (pero solo si no tenemos bsale_id)
+                            bsaleLink = o.bsale_url;
+                          } else {
+                            // Fallback: URL de búsqueda
+                            bsaleLink = generateBsaleUrl(o.receipt_number);
+                          }
+                          
+                          return bsaleLink ? (
+                            <a
+                              href={bsaleLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
+                              title={o.bsale_id ? "Abrir documento en Bsale (se abre en nueva pestaña)" : "Buscar boleta en Bsale (se abre en nueva pestaña)"}
+                            >
+                              {o.receipt_number}
+                              <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          ) : (
+                            <span className="text-slate-700 text-xs">{o.receipt_number}</span>
+                          );
+                        })()}
                         {duplicates[o.id]?.hasDuplicateReceipt && (
                           <span 
                             className="text-amber-600 cursor-help font-bold" 

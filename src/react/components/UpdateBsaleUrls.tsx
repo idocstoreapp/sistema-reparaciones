@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { validateBsaleDocument } from "@/lib/bsale";
+import { validateBsaleDocument, buildBsalePdfUrl } from "@/lib/bsale";
 import type { Order } from "@/types";
 
 /**
@@ -28,10 +28,11 @@ export default function UpdateBsaleUrls() {
     setProgress({ current: 0, total: 0 });
 
     try {
-      // 1. Obtener todas las órdenes con receipt_number pero sin bsale_url o sin bsale_id
+      // 1. Obtener TODAS las órdenes con receipt_number (incluyendo las que ya tienen bsale_url)
+      // Esto asegura que todas tengan el formato correcto de URL: https://app2.bsale.cl/documents/show/{id}
       const { data: orders, error: fetchError } = await supabase
         .from("orders")
-        .select("id, receipt_number, bsale_url, bsale_id")
+        .select("id, receipt_number, bsale_url, bsale_id, bsale_number")
         .not("receipt_number", "is", null)
         .neq("receipt_number", "");
 
@@ -50,10 +51,9 @@ export default function UpdateBsaleUrls() {
         return;
       }
 
-      // Filtrar órdenes que necesitan actualización (sin bsale_url o sin bsale_id)
-      const ordersToUpdate = orders.filter(
-        (o) => !o.bsale_url || !o.bsale_id
-      ) as Order[];
+      // Actualizar TODAS las órdenes con número de recibo para asegurar que tengan el formato correcto
+      // Esto incluye órdenes que ya tienen bsale_url pero pueden tener un formato incorrecto
+      const ordersToUpdate = orders as Order[];
 
       setProgress({ current: 0, total: ordersToUpdate.length });
 
@@ -90,14 +90,23 @@ export default function UpdateBsaleUrls() {
               bsale_total_amount?: number | null;
             } = {};
 
-            // Actualizar bsale_url si no existe o si tenemos uno mejor (urlPdf)
-            if (document.url || document.urlPdf) {
-              updateData.bsale_url = document.urlPdf || document.url || null;
+            // SIEMPRE actualizar bsale_id si tenemos el ID del documento
+            if (document.id) {
+              updateData.bsale_id = document.id;
             }
 
-            // Actualizar bsale_id si no existe
-            if (document.id && !order.bsale_id) {
-              updateData.bsale_id = document.id;
+            // SIEMPRE actualizar bsale_url con el formato correcto de Bsale
+            // Prioridad: construir URL web con ID (formato correcto) > urlPdf > url
+            if (document.id) {
+              // SIEMPRE construir URL web de Bsale usando el ID: https://app2.bsale.cl/documents/show/{id}
+              // Este es el formato correcto para abrir el documento en la interfaz web de Bsale
+              updateData.bsale_url = buildBsalePdfUrl(document.id);
+            } else if (document.urlPdf) {
+              // Usar urlPdf si viene de la API (formato oficial) pero no tenemos ID
+              updateData.bsale_url = document.urlPdf;
+            } else if (document.url) {
+              // Usar url si está disponible (fallback)
+              updateData.bsale_url = document.url;
             }
 
             // Actualizar bsale_number si no existe
@@ -167,8 +176,8 @@ export default function UpdateBsaleUrls() {
         Actualizar URLs de Bsale para Órdenes Existentes
       </h3>
       <p className="text-sm text-slate-600 mb-4">
-        Este proceso validará todas las órdenes con número de recibo y actualizará
-        las URLs de Bsale para que apunten directamente al PDF de la factura.
+        Este proceso validará <strong>todas las órdenes existentes</strong> con número de recibo y actualizará
+        las URLs de Bsale con el formato correcto: <code className="text-xs bg-slate-100 px-1 rounded">https://app2.bsale.cl/documents/show/{`{id}`}</code>
       </p>
 
       {loading && (

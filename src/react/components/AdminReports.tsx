@@ -265,7 +265,7 @@ export default function AdminReports() {
 
     let q = supabase
       .from("orders")
-      .select("*, original_created_at, technician:users!technician_id(name), suppliers(id, name)")
+      .select("*, original_created_at, receipt_number, bsale_url, bsale_id, bsale_number, technician:users!technician_id(name), suppliers(id, name)")
       .order("created_at", { ascending: false });
 
     // Aplicar filtro de técnico
