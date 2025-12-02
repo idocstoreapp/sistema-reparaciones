@@ -6,12 +6,7 @@ import { calcCommission } from "@/lib/commission";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { PaymentMethod } from "@/lib/commission";
 import KpiCard from "./KpiCard";
-import OrdersTable from "./OrdersTable";
 import AdminReports from "./AdminReports";
-import TechnicianPayments from "./TechnicianPayments";
-import SupplierPurchases from "./SupplierPurchases";
-import UserManagement from "./UserManagement";
-import BranchManagement from "./BranchManagement";
 import UpdateBsaleUrls from "./UpdateBsaleUrls";
 
 export default function AdminDashboard() {
@@ -23,10 +18,6 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [supplierPurchasesOpen, setSupplierPurchasesOpen] = useState(false);
-  const [userManagementOpen, setUserManagementOpen] = useState(false);
-  const [technicianPaymentsOpen, setTechnicianPaymentsOpen] = useState(false);
-  const [branchManagementOpen, setBranchManagementOpen] = useState(false);
 
   // Función para recargar KPIs
   const refreshKPIs = () => {
@@ -135,126 +126,12 @@ export default function AdminDashboard() {
 
       <AdminReports key={refreshKey} />
 
-      {/* Card colapsable para Compras a Proveedores */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button
-          onClick={() => setSupplierPurchasesOpen(!supplierPurchasesOpen)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🛒</span>
-            <div className="text-left">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Compras a Proveedores
-              </h3>
-              <p className="text-sm text-slate-600">
-                Gestiona y consulta las compras realizadas a proveedores
-              </p>
-            </div>
-          </div>
-          <span className="text-slate-400 text-xl">
-            {supplierPurchasesOpen ? "▼" : "▶"}
-          </span>
-        </button>
-        {supplierPurchasesOpen && (
-          <div className="border-t border-slate-200">
-            <SupplierPurchases key={refreshKey} />
-          </div>
-        )}
-      </div>
-
-      {/* Card colapsable para Gestión de Usuarios */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button
-          onClick={() => setUserManagementOpen(!userManagementOpen)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">👥</span>
-            <div className="text-left">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Gestión de Usuarios
-              </h3>
-              <p className="text-sm text-slate-600">
-                Administra técnicos y administradores del sistema
-              </p>
-            </div>
-          </div>
-          <span className="text-slate-400 text-xl">
-            {userManagementOpen ? "▼" : "▶"}
-          </span>
-        </button>
-        {userManagementOpen && (
-          <div className="border-t border-slate-200">
-            <UserManagement />
-          </div>
-        )}
-      </div>
-
-      {/* Card colapsable para Pago a Técnicos */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button
-          onClick={() => setTechnicianPaymentsOpen(!technicianPaymentsOpen)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">💵</span>
-            <div className="text-left">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Pago a Técnicos
-              </h3>
-              <p className="text-sm text-slate-600">
-                Gestiona pagos, liquidaciones y ajustes de sueldo de técnicos
-              </p>
-            </div>
-          </div>
-          <span className="text-slate-400 text-xl">
-            {technicianPaymentsOpen ? "▼" : "▶"}
-          </span>
-        </button>
-        {technicianPaymentsOpen && (
-          <div className="border-t border-slate-200">
-            <TechnicianPayments key={refreshKey} />
-          </div>
-        )}
-      </div>
-
-      {/* Card colapsable para Gestión de Sucursales y Gastos */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button
-          onClick={() => setBranchManagementOpen(!branchManagementOpen)}
-          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🏢</span>
-            <div className="text-left">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Gestión de Sucursales y Gastos
-              </h3>
-              <p className="text-sm text-slate-600">
-                Administra sucursales, gastos hormiga, gastos generales y visualiza KPIs por sucursal
-              </p>
-            </div>
-          </div>
-          <span className="text-slate-400 text-xl">
-            {branchManagementOpen ? "▼" : "▶"}
-          </span>
-        </button>
-        {branchManagementOpen && (
-          <div className="border-t border-slate-200">
-            <BranchManagement key={refreshKey} />
-          </div>
-        )}
-      </div>
-
       {/* Card para Actualizar URLs de Bsale */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="border-t border-slate-200 p-6">
           <UpdateBsaleUrls />
         </div>
       </div>
-
-      <OrdersTable isAdmin={true} onUpdate={refreshKPIs} />
     </div>
   );
 }

@@ -7,15 +7,28 @@ import type { SmallExpense, Branch, Profile } from "@/types";
 interface SmallExpensesProps {
   sucursalId: string;
   refreshKey?: number;
+  dateFilter?: {
+    start: string;
+    end: string;
+    startDate: Date;
+    endDate: Date;
+  };
 }
 
-export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpensesProps) {
+export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter }: SmallExpensesProps) {
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [localDateFilter, setLocalDateFilter] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
   const [expenses, setExpenses] = useState<SmallExpense[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
-    tipo: "aseo" as "aseo" | "mercaderia" | "compras_pequenas",
+    tipo: "aseo",
+    tipoPersonalizado: "",
+    usarTipoPersonalizado: false,
     monto: "",
     fecha: new Date().toISOString().split("T")[0],
     descripcion: "",
@@ -25,20 +38,31 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
 
   useEffect(() => {
     loadData();
-  }, [sucursalId, refreshKey]);
+  }, [sucursalId, refreshKey, dateFilter, showAllHistory, localDateFilter]);
 
   async function loadData() {
     setLoading(true);
     try {
-      // Cargar gastos de la sucursal
-      const { data: expensesData, error: expensesError } = await supabase
+      // Determinar qué filtro usar
+      let query = supabase
         .from("small_expenses")
         .select(`
           *,
           branch:branches(*),
           user:users(id, name, email)
         `)
-        .eq("sucursal_id", sucursalId)
+        .eq("sucursal_id", sucursalId);
+
+      // Aplicar filtros de fecha
+      if (!showAllHistory) {
+        if (localDateFilter) {
+          query = query.gte("fecha", localDateFilter.start).lte("fecha", localDateFilter.end);
+        } else if (dateFilter) {
+          query = query.gte("fecha", dateFilter.start).lte("fecha", dateFilter.end);
+        }
+      }
+
+      const { data: expensesData, error: expensesError } = await query
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false });
 
@@ -74,12 +98,21 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuario no autenticado");
 
+      const tipoFinal = formData.usarTipoPersonalizado 
+        ? formData.tipoPersonalizado.trim() 
+        : formData.tipo;
+
+      if (!tipoFinal || tipoFinal.length === 0) {
+        setError("Debes seleccionar o ingresar un tipo de gasto");
+        return;
+      }
+
       const { error: insertError } = await supabase
         .from("small_expenses")
         .insert({
           sucursal_id: sucursalId,
           user_id: user.id,
-          tipo: formData.tipo,
+          tipo: tipoFinal,
           monto: parseFloat(formData.monto),
           fecha: formData.fecha,
           descripcion: formData.descripcion.trim() || null,
@@ -90,6 +123,8 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
       // Limpiar formulario
       setFormData({
         tipo: "aseo",
+        tipoPersonalizado: "",
+        usarTipoPersonalizado: false,
         monto: "",
         fecha: new Date().toISOString().split("T")[0],
         descripcion: "",
@@ -121,15 +156,72 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-lg font-semibold text-slate-900">Gastos Hormiga</h3>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium"
-        >
-          {showForm ? "Cancelar" : "+ Nuevo Gasto"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAllHistory(!showAllHistory)}
+            className={`px-3 py-2 rounded-md transition font-medium text-sm ${
+              showAllHistory
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            {showAllHistory ? "📅 Ver Filtrado" : "📋 Ver Todo el Historial"}
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium"
+          >
+            {showForm ? "Cancelar" : "+ Nuevo Gasto"}
+          </button>
+        </div>
       </div>
+
+      {/* Filtro de fecha local (solo si showAllHistory está activo) */}
+      {showAllHistory && (
+        <div className="bg-slate-50 p-4 rounded-lg space-y-2">
+          <p className="text-sm font-medium text-slate-700">Filtrar por rango de fechas:</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-slate-600 mb-1">Desde</label>
+              <input
+                type="date"
+                value={localDateFilter?.start || ""}
+                onChange={(e) =>
+                  setLocalDateFilter({
+                    start: e.target.value,
+                    end: localDateFilter?.end || e.target.value,
+                  })
+                }
+                className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-600 mb-1">Hasta</label>
+              <input
+                type="date"
+                value={localDateFilter?.end || ""}
+                onChange={(e) =>
+                  setLocalDateFilter({
+                    start: localDateFilter?.start || e.target.value,
+                    end: e.target.value,
+                  })
+                }
+                className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+              />
+            </div>
+          </div>
+          {localDateFilter && (
+            <button
+              onClick={() => setLocalDateFilter(null)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              Limpiar filtro
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
@@ -144,16 +236,35 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Tipo de Gasto *
               </label>
-              <select
-                value={formData.tipo}
-                onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                required
-              >
-                <option value="aseo">Aseo</option>
-                <option value="mercaderia">Mercadería</option>
-                <option value="compras_pequenas">Compras Pequeñas</option>
-              </select>
+              <div className="space-y-2">
+                <select
+                  value={formData.usarTipoPersonalizado ? "personalizado" : formData.tipo}
+                  onChange={(e) => {
+                    if (e.target.value === "personalizado") {
+                      setFormData({ ...formData, usarTipoPersonalizado: true });
+                    } else {
+                      setFormData({ ...formData, tipo: e.target.value, usarTipoPersonalizado: false });
+                    }
+                  }}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  required
+                >
+                  <option value="aseo">Aseo</option>
+                  <option value="mercaderia">Mercadería</option>
+                  <option value="compras_pequenas">Compras Pequeñas</option>
+                  <option value="personalizado">+ Otro (Personalizado)</option>
+                </select>
+                {formData.usarTipoPersonalizado && (
+                  <input
+                    type="text"
+                    value={formData.tipoPersonalizado}
+                    onChange={(e) => setFormData({ ...formData, tipoPersonalizado: e.target.value })}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    placeholder="Ingresa el tipo de gasto"
+                    required
+                  />
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -275,4 +386,5 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0 }: SmallExpen
     </div>
   );
 }
+
 

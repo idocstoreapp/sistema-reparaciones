@@ -24,3 +24,4 @@ COMMENT ON COLUMN orders.bsale_number IS 'Número de documento extraído de Bsal
 COMMENT ON COLUMN orders.bsale_url IS 'URL del documento en Bsale. Se genera automáticamente al validar el recibo con la API de Bsale.';
 COMMENT ON COLUMN orders.bsale_total_amount IS 'Monto total del documento extraído de Bsale. Se obtiene automáticamente al validar el recibo con la API de Bsale.';
 
+

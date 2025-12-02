@@ -7,16 +7,29 @@ import type { GeneralExpense, Branch, Profile } from "@/types";
 interface GeneralExpensesProps {
   sucursalId?: string; // Opcional: si se pasa, filtra por sucursal
   refreshKey?: number;
+  dateFilter?: {
+    start: string;
+    end: string;
+    startDate: Date;
+    endDate: Date;
+  };
 }
 
-export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralExpensesProps) {
+export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter }: GeneralExpensesProps) {
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [localDateFilter, setLocalDateFilter] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
   const [expenses, setExpenses] = useState<GeneralExpense[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     sucursal_id: sucursalId || "",
-    tipo: "arriendo" as "arriendo" | "internet" | "luz" | "agua" | "facturas" | "servicios",
+    tipo: "arriendo",
+    tipoPersonalizado: "",
+    usarTipoPersonalizado: false,
     monto: "",
     fecha: new Date().toISOString().split("T")[0],
     descripcion: "",
@@ -26,7 +39,7 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
 
   useEffect(() => {
     loadData();
-  }, [sucursalId, refreshKey]);
+  }, [sucursalId, refreshKey, dateFilter, showAllHistory, localDateFilter]);
 
   async function loadData() {
     setLoading(true);
@@ -46,15 +59,24 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
           *,
           branch:branches(*),
           user:users(id, name, email)
-        `)
-        .order("fecha", { ascending: false })
-        .order("created_at", { ascending: false });
+        `);
 
       if (sucursalId) {
         query = query.eq("sucursal_id", sucursalId);
       }
 
-      const { data: expensesData, error: expensesError } = await query;
+      // Aplicar filtros de fecha
+      if (!showAllHistory) {
+        if (localDateFilter) {
+          query = query.gte("fecha", localDateFilter.start).lte("fecha", localDateFilter.end);
+        } else if (dateFilter) {
+          query = query.gte("fecha", dateFilter.start).lte("fecha", dateFilter.end);
+        }
+      }
+
+      const { data: expensesData, error: expensesError } = await query
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false });
 
       if (expensesError) throw expensesError;
 
@@ -86,12 +108,21 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuario no autenticado");
 
+      const tipoFinal = formData.usarTipoPersonalizado 
+        ? formData.tipoPersonalizado.trim() 
+        : formData.tipo;
+
+      if (!tipoFinal || tipoFinal.length === 0) {
+        setError("Debes seleccionar o ingresar un tipo de gasto");
+        return;
+      }
+
       const { error: insertError } = await supabase
         .from("general_expenses")
         .insert({
           sucursal_id: formData.sucursal_id,
           user_id: user.id,
-          tipo: formData.tipo,
+          tipo: tipoFinal,
           monto: parseFloat(formData.monto),
           fecha: formData.fecha,
           descripcion: formData.descripcion.trim() || null,
@@ -103,6 +134,8 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
       setFormData({
         sucursal_id: sucursalId || "",
         tipo: "arriendo",
+        tipoPersonalizado: "",
+        usarTipoPersonalizado: false,
         monto: "",
         fecha: new Date().toISOString().split("T")[0],
         descripcion: "",
@@ -118,9 +151,15 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
   }
 
   const totalByType = expenses.reduce((acc, exp) => {
-    acc[exp.tipo] = (acc[exp.tipo] || 0) + exp.monto;
+    const tipo = exp.tipo || "otros";
+    acc[tipo] = (acc[tipo] || 0) + exp.monto;
     return acc;
   }, {} as Record<string, number>);
+
+  // Obtener tipos únicos para mostrar en el resumen
+  const tiposUnicos = Array.from(new Set(expenses.map(exp => exp.tipo))).filter(Boolean);
+  const tiposPredefinidos = ["arriendo", "internet", "luz", "agua", "facturas", "servicios"];
+  const tiposPersonalizados = tiposUnicos.filter(tipo => !tiposPredefinidos.includes(tipo));
 
   const total = expenses.reduce((sum, exp) => sum + exp.monto, 0);
 
@@ -134,17 +173,74 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-lg font-semibold text-slate-900">
           Gastos Generales {sucursalId ? "(Filtrado por Sucursal)" : "(Todas las Sucursales)"}
         </h3>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium"
-        >
-          {showForm ? "Cancelar" : "+ Nuevo Gasto"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAllHistory(!showAllHistory)}
+            className={`px-3 py-2 rounded-md transition font-medium text-sm ${
+              showAllHistory
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            {showAllHistory ? "📅 Ver Filtrado" : "📋 Ver Todo el Historial"}
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium"
+          >
+            {showForm ? "Cancelar" : "+ Nuevo Gasto"}
+          </button>
+        </div>
       </div>
+
+      {/* Filtro de fecha local (solo si showAllHistory está activo) */}
+      {showAllHistory && (
+        <div className="bg-slate-50 p-4 rounded-lg space-y-2">
+          <p className="text-sm font-medium text-slate-700">Filtrar por rango de fechas:</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-slate-600 mb-1">Desde</label>
+              <input
+                type="date"
+                value={localDateFilter?.start || ""}
+                onChange={(e) =>
+                  setLocalDateFilter({
+                    start: e.target.value,
+                    end: localDateFilter?.end || e.target.value,
+                  })
+                }
+                className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-600 mb-1">Hasta</label>
+              <input
+                type="date"
+                value={localDateFilter?.end || ""}
+                onChange={(e) =>
+                  setLocalDateFilter({
+                    start: localDateFilter?.start || e.target.value,
+                    end: e.target.value,
+                  })
+                }
+                className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm"
+              />
+            </div>
+          </div>
+          {localDateFilter && (
+            <button
+              onClick={() => setLocalDateFilter(null)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              Limpiar filtro
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
@@ -178,19 +274,38 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Tipo de Gasto *
               </label>
-              <select
-                value={formData.tipo}
-                onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                required
-              >
-                <option value="arriendo">Arriendo</option>
-                <option value="internet">Internet</option>
-                <option value="luz">Luz</option>
-                <option value="agua">Agua</option>
-                <option value="facturas">Facturas</option>
-                <option value="servicios">Servicios</option>
-              </select>
+              <div className="space-y-2">
+                <select
+                  value={formData.usarTipoPersonalizado ? "personalizado" : formData.tipo}
+                  onChange={(e) => {
+                    if (e.target.value === "personalizado") {
+                      setFormData({ ...formData, usarTipoPersonalizado: true });
+                    } else {
+                      setFormData({ ...formData, tipo: e.target.value, usarTipoPersonalizado: false });
+                    }
+                  }}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  required
+                >
+                  <option value="arriendo">Arriendo</option>
+                  <option value="internet">Internet</option>
+                  <option value="luz">Luz</option>
+                  <option value="agua">Agua</option>
+                  <option value="facturas">Facturas</option>
+                  <option value="servicios">Servicios</option>
+                  <option value="personalizado">+ Otro (Personalizado)</option>
+                </select>
+                {formData.usarTipoPersonalizado && (
+                  <input
+                    type="text"
+                    value={formData.tipoPersonalizado}
+                    onChange={(e) => setFormData({ ...formData, tipoPersonalizado: e.target.value })}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    placeholder="Ingresa el tipo de gasto"
+                    required
+                  />
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -243,43 +358,63 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
       )}
 
       {/* Resumen por tipo */}
-      <div className="grid grid-cols-6 gap-4">
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Arriendo</p>
-          <p className="text-lg font-semibold text-slate-900">
-            {formatCLP(totalByType["arriendo"] || 0)}
-          </p>
+      <div className="space-y-4">
+        {/* Tipos predefinidos */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Arriendo</p>
+            <p className="text-xl font-bold text-slate-900 break-words">
+              {formatCLP(totalByType["arriendo"] || 0)}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Internet</p>
+            <p className="text-xl font-bold text-slate-900 break-words">
+              {formatCLP(totalByType["internet"] || 0)}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Luz</p>
+            <p className="text-xl font-bold text-slate-900 break-words">
+              {formatCLP(totalByType["luz"] || 0)}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Agua</p>
+            <p className="text-xl font-bold text-slate-900 break-words">
+              {formatCLP(totalByType["agua"] || 0)}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Facturas/Servicios</p>
+            <p className="text-xl font-bold text-slate-900 break-words">
+              {formatCLP((totalByType["facturas"] || 0) + (totalByType["servicios"] || 0))}
+            </p>
+          </div>
+          <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm">
+            <p className="text-sm font-medium text-slate-700 mb-2">Total</p>
+            <p className="text-xl font-bold text-brand break-words">
+              {formatCLP(total)}
+            </p>
+          </div>
         </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Internet</p>
-          <p className="text-lg font-semibold text-slate-900">
-            {formatCLP(totalByType["internet"] || 0)}
-          </p>
-        </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Luz</p>
-          <p className="text-lg font-semibold text-slate-900">
-            {formatCLP(totalByType["luz"] || 0)}
-          </p>
-        </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Agua</p>
-          <p className="text-lg font-semibold text-slate-900">
-            {formatCLP(totalByType["agua"] || 0)}
-          </p>
-        </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Facturas/Servicios</p>
-          <p className="text-lg font-semibold text-slate-900">
-            {formatCLP((totalByType["facturas"] || 0) + (totalByType["servicios"] || 0))}
-          </p>
-        </div>
-        <div className="bg-brand-light/10 p-3 rounded border-2 border-brand-light">
-          <p className="text-xs text-slate-600">Total</p>
-          <p className="text-lg font-semibold text-brand">
-            {formatCLP(total)}
-          </p>
-        </div>
+        
+        {/* Tipos personalizados */}
+        {tiposPersonalizados.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-3">Tipos Personalizados:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {tiposPersonalizados.map((tipo) => (
+                <div key={tipo} className="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
+                  <p className="text-sm font-medium text-slate-700 mb-2 break-words">{tipo}</p>
+                  <p className="text-xl font-bold text-slate-900 break-words">
+                    {formatCLP(totalByType[tipo] || 0)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabla de gastos */}
@@ -315,7 +450,9 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
                        exp.tipo === "internet" ? "Internet" :
                        exp.tipo === "luz" ? "Luz" :
                        exp.tipo === "agua" ? "Agua" :
-                       exp.tipo === "facturas" ? "Facturas" : "Servicios"}
+                       exp.tipo === "facturas" ? "Facturas" :
+                       exp.tipo === "servicios" ? "Servicios" :
+                       exp.tipo}
                     </span>
                   </td>
                   <td className="py-2 px-2">{exp.descripcion || "-"}</td>
@@ -332,4 +469,5 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0 }: GeneralE
     </div>
   );
 }
+
 

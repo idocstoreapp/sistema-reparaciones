@@ -203,3 +203,4 @@ Los errores más comunes:
 - `"relation does not exist"` → Tabla no existe
 - `"Invalid API key"` → Clave incorrecta
 
+

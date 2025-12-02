@@ -155,3 +155,4 @@ CREATE POLICY "users_select_admin"
   USING (is_admin());
 ```
 
+

@@ -104,3 +104,4 @@ Si prefieres usar el script completo, ejecuta `database/crear_usuarios_desarroll
 3. ❌ Insertar usuario en tabla `users` → **Hazlo ahora**
 4. ✅ Iniciar sesión → Debería funcionar después de los pasos 2 y 3
 
+

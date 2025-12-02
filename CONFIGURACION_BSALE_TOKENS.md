@@ -97,3 +97,4 @@ El sistema ahora:
 - Verifica que los tokens sean correctos
 - Asegúrate de que la URL de la API sea correcta (por defecto: `https://api.bsale.cl`)
 
+

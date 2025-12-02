@@ -7,6 +7,12 @@ import OrdersTable from "./components/OrdersTable";
 import WeeklyReport from "./components/WeeklyReport";
 import AdminDashboard from "./components/AdminDashboard";
 import EncargadoDashboard from "./components/EncargadoDashboard";
+import Sidebar, { type DashboardSection } from "./components/Sidebar";
+import BranchExpensesPage from "./components/BranchExpensesPage";
+import AdminReports from "./components/AdminReports";
+import SupplierPurchases from "./components/SupplierPurchases";
+import UserManagement from "./components/UserManagement";
+import TechnicianPayments from "./components/TechnicianPayments";
 
 function Header({ userName, userRole }: { userName: string; userRole: string }) {
   async function handleLogout() {
@@ -14,21 +20,23 @@ function Header({ userName, userRole }: { userName: string; userRole: string }) 
     window.location.href = "/login";
   }
 
+  const hasSidebar = userRole === "admin" || userRole === "encargado";
+
   return (
-    <header className="bg-brand shadow-lg border-b-2 border-brand-light mb-6">
+    <header className={`bg-brand shadow-lg border-b-2 border-brand-light ${hasSidebar ? 'pl-64' : ''}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-32">
+        <div className="flex items-center justify-between h-20">
           <div className="flex items-center gap-4">
             <img 
               src="/logo.png" 
               alt="IDocStore Logo" 
-              className="h-40 w-auto object-contain"
+              className="h-16 w-auto object-contain"
             />
             <div>
-              <h1 className="text-xl font-bold text-brand-white">
+              <h1 className="text-lg font-bold text-brand-white">
                 Registro de Servicios
               </h1>
-              <p className="text-sm text-brand-white">
+              <p className="text-xs text-brand-white">
                 {userName} • {userRole === "admin" ? "Administrador" : userRole === "encargado" ? "Encargado" : "Técnico"}
               </p>
             </div>
@@ -80,6 +88,7 @@ export default function Dashboard() {
   const [me, setMe] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [currentSection, setCurrentSection] = useState<DashboardSection>("dashboard");
 
   useEffect(() => {
     let cancelled = false;
@@ -175,17 +184,117 @@ export default function Dashboard() {
     );
   }
 
+  const hasSidebar = me.role === "admin" || me.role === "encargado";
+
+  const renderContent = () => {
+    if (!hasSidebar) {
+      return <TechnicalView me={me} />;
+    }
+
+    switch (currentSection) {
+      case "dashboard":
+        return me.role === "admin" ? (
+          <AdminDashboard />
+        ) : (
+          <EncargadoDashboard />
+        );
+      case "reports":
+        return me.role === "admin" ? (
+          <div className="space-y-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                Reportes Administrativos
+              </h1>
+              <p className="text-slate-600">
+                Visualiza reportes semanales y mensuales de operaciones
+              </p>
+            </div>
+            <AdminReports />
+          </div>
+        ) : null;
+      case "suppliers":
+        return me.role === "admin" ? (
+          <div className="space-y-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                Compra a Proveedores
+              </h1>
+              <p className="text-slate-600">
+                Gestiona y consulta las compras realizadas a proveedores
+              </p>
+            </div>
+            <SupplierPurchases />
+          </div>
+        ) : null;
+      case "users":
+        return me.role === "admin" ? (
+          <div className="space-y-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                Gestión de Usuarios
+              </h1>
+              <p className="text-slate-600">
+                Administra técnicos y administradores del sistema
+              </p>
+            </div>
+            <UserManagement />
+          </div>
+        ) : null;
+      case "payments":
+        return me.role === "admin" ? (
+          <div className="space-y-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                Pago a Técnicos
+              </h1>
+              <p className="text-slate-600">
+                Gestiona pagos, liquidaciones y ajustes de sueldo de técnicos
+              </p>
+            </div>
+            <TechnicianPayments />
+          </div>
+        ) : null;
+      case "orders":
+        return (
+          <div className="space-y-6">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                Órdenes de Reparación
+              </h1>
+              <p className="text-slate-600">
+                {me.role === "admin" 
+                  ? "Visualiza todas las órdenes del sistema"
+                  : "Visualiza las órdenes de tu sucursal"}
+              </p>
+            </div>
+            <OrdersTable isAdmin={me.role === "admin"} />
+          </div>
+        );
+      case "branches":
+        return (
+          <BranchExpensesPage userRole={me.role} />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div>
       <Header userName={me.name} userRole={me.role} />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {me.role === "admin" ? (
-          <AdminDashboard />
-        ) : me.role === "encargado" ? (
-          <EncargadoDashboard />
-        ) : (
-          <TechnicalView me={me} />
+      <div className="flex">
+        {hasSidebar && (
+          <Sidebar
+            currentSection={currentSection}
+            onSectionChange={setCurrentSection}
+            userRole={me.role}
+          />
         )}
+        <main className={`flex-1 ${hasSidebar ? 'ml-64' : ''}`}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {renderContent()}
+          </div>
+        </main>
       </div>
     </div>
   );

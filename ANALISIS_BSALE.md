@@ -103,3 +103,4 @@ Para probar la funcionalidad:
 - `BSALE_CONFIGURACION.md`: Configuración del token de Bsale
 - `src/react/components/OrdersTable.tsx`: Validación al editar órdenes (ya existía)
 
+

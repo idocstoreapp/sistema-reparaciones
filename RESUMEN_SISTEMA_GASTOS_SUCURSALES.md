@@ -272,3 +272,4 @@ Si encuentras problemas:
 3. Verifica que las migraciones SQL se ejecutaron correctamente
 4. Verifica que los usuarios tienen los roles y sucursales correctas asignadas
 
+

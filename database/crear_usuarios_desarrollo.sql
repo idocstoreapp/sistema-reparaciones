@@ -104,3 +104,4 @@ ORDER BY role;
 -- 4. Las contraseñas se configuran en Authentication, no aquí
 -- 5. Para iniciar sesión, usa el email y password configurados en Authentication
 
+

@@ -20,3 +20,4 @@ CREATE INDEX IF NOT EXISTS idx_orders_bsale_id ON orders(bsale_id) WHERE bsale_i
 -- 3. Las órdenes existentes que ya tienen bsale_url pero no bsale_id
 --    necesitarán ser re-validadas para obtener el bsale_id
 
+
