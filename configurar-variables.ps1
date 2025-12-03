@@ -83,3 +83,4 @@ Write-Host "   - Copia: Project URL, anon public key, service_role key"
 Write-Host ""
 
 
+

@@ -137,3 +137,4 @@ Si después de seguir estos pasos aún no funciona:
 4. Revisa `CONFIGURACION_WINDOWS.md` para más detalles
 
 
+

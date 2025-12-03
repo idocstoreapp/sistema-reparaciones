@@ -178,3 +178,4 @@ ORDER BY proname;
 -- 5. Los admins pueden crear gastos hormiga en cualquier sucursal
 
 
+

@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+hazme un prompt para que otra app que tienes listas parecidad haga el mismo trabajo y diseño y haga version movil de toda la app 
+y que haga lo de diseñar listas para movil sin obidar los menus o acciones que ralizan luego cada cosa del listado 
+que busque todo lo que haga lista
+y que haga un diseño movil de toda la app en resumen bien prompteado plisimport { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/types";
 import WeeklySummary from "./components/WeeklySummary";

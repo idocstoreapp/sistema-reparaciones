@@ -22,3 +22,4 @@ CREATE INDEX IF NOT EXISTS idx_orders_bsale_id ON orders(bsale_id) WHERE bsale_i
 
 
 
+

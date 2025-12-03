@@ -111,3 +111,4 @@ ORDER BY proname;
 -- 4. Si un usuario no puede iniciar sesión, verifica que exista en la tabla users con el mismo ID de auth.uid()
 
 
+

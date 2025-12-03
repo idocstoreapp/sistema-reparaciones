@@ -26,3 +26,4 @@ COMMENT ON COLUMN orders.bsale_total_amount IS 'Monto total del documento extra√
 
 
 
+

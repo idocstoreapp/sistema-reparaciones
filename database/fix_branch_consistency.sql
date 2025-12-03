@@ -89,3 +89,4 @@ WHERE u.role IN ('technician', 'encargado')
 ORDER BY u.local, u.name;
 
 
+
