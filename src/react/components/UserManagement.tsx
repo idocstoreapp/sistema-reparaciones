@@ -354,7 +354,91 @@ export default function UserManagement() {
       )}
 
       {/* Lista de usuarios */}
-      <div className="overflow-x-auto">
+      {/* Vista de Cards para Móvil */}
+      <div className="lg:hidden space-y-3">
+        {users.length === 0 ? (
+          <div className="bg-white rounded-lg border border-slate-200 p-6 text-center text-slate-500">
+            No hay usuarios registrados
+          </div>
+        ) : (
+          users.map((user) => (
+            <div
+              key={user.id}
+              className="bg-white rounded-lg border border-slate-200 shadow-sm p-4"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-slate-900 mb-1">
+                    {user.name} {user.last_name || ""}
+                  </div>
+                  <div className="text-xs text-slate-600">{user.email}</div>
+                </div>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    user.role === "admin"
+                      ? "bg-purple-100 text-purple-700"
+                      : user.role === "encargado"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-blue-100 text-blue-700"
+                  }`}
+                >
+                  {user.role === "admin" ? "Admin" : user.role === "encargado" ? "Encargado" : "Técnico"}
+                </span>
+              </div>
+              <div className="space-y-2 mb-3 text-xs">
+                <div>
+                  <span className="text-slate-500">Sucursal: </span>
+                  <span className="text-slate-900 font-medium">
+                    {user.sucursal_id ? (branches.find(b => b.id === user.sucursal_id)?.name || "-") : "-"}
+                  </span>
+                </div>
+                {user.local && (
+                  <div>
+                    <span className="text-slate-500">Local: </span>
+                    <span className="text-slate-900">{user.local}</span>
+                  </div>
+                )}
+                {user.document_number && (
+                  <div>
+                    <span className="text-slate-500">Documento: </span>
+                    <span className="text-slate-900">{user.document_number}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-slate-500">Creado: </span>
+                  <span className="text-slate-900">{formatDate(user.created_at)}</span>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => openEditModal(user)}
+                  className="w-full px-3 py-2 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition"
+                >
+                  ✏️ Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasswordUser(user)}
+                  className="w-full px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
+                >
+                  🔑 Cambiar Contraseña
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteUser(user)}
+                  className="w-full px-3 py-2 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                >
+                  🗑️ Eliminar
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Vista de Tabla para Desktop */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left border-b border-slate-200">
@@ -414,7 +498,7 @@ export default function UserManagement() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => openPasswordModal(user)}
+                        onClick={() => setPasswordUser(user)}
                         className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition"
                       >
                         Contraseña

@@ -91,22 +91,22 @@ export default function EncargadoDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
           Panel del Encargado
         </h1>
-        <p className="text-slate-600">
+        <p className="text-sm sm:text-base text-slate-600">
           {branch.name} • Gestión de tu sucursal
         </p>
       </div>
 
       {/* Navegación por secciones */}
-      <div className="bg-white rounded-lg shadow-md p-4">
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setActiveSection("expenses")}
-            className={`px-4 py-2 rounded-md transition font-medium ${
+            className={`px-3 sm:px-4 py-2 text-sm sm:text-base rounded-md transition font-medium ${
               activeSection === "expenses"
                 ? "bg-brand-light text-white"
                 : "bg-slate-200 text-slate-700 hover:bg-slate-300"
@@ -116,7 +116,7 @@ export default function EncargadoDashboard() {
           </button>
           <button
             onClick={() => setActiveSection("payments")}
-            className={`px-4 py-2 rounded-md transition font-medium ${
+            className={`px-3 sm:px-4 py-2 text-sm sm:text-base rounded-md transition font-medium ${
               activeSection === "payments"
                 ? "bg-brand-light text-white"
                 : "bg-slate-200 text-slate-700 hover:bg-slate-300"
@@ -126,7 +126,7 @@ export default function EncargadoDashboard() {
           </button>
           <button
             onClick={() => setActiveSection("orders")}
-            className={`px-4 py-2 rounded-md transition font-medium ${
+            className={`px-3 sm:px-4 py-2 text-sm sm:text-base rounded-md transition font-medium ${
               activeSection === "orders"
                 ? "bg-brand-light text-white"
                 : "bg-slate-200 text-slate-700 hover:bg-slate-300"
@@ -160,7 +160,7 @@ export default function EncargadoDashboard() {
       <div className="flex justify-end">
         <button
           onClick={() => setRefreshKey(prev => prev + 1)}
-          className="px-4 py-2 bg-brand-light text-white rounded-md hover:bg-brand transition font-medium"
+          className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-brand-light text-white rounded-md hover:bg-brand transition font-medium"
         >
           🔄 Actualizar Datos
         </button>

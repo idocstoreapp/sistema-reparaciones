@@ -177,3 +177,4 @@ ORDER BY proname;
 -- 4. Si un encargado no tiene sucursal_id asignado, no podrá crear gastos hormiga
 -- 5. Los admins pueden crear gastos hormiga en cualquier sucursal
 
+

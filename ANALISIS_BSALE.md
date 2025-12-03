@@ -104,3 +104,4 @@ Para probar la funcionalidad:
 - `src/react/components/OrdersTable.tsx`: Validación al editar órdenes (ya existía)
 
 
+

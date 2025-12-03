@@ -204,3 +204,4 @@ Los errores más comunes:
 - `"Invalid API key"` → Clave incorrecta
 
 
+

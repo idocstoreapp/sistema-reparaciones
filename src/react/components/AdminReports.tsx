@@ -25,6 +25,7 @@ export default function AdminReports() {
   const [loading, setLoading] = useState(true);
   const [loadingSettlements, setLoadingSettlements] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [historyModalOpen, setHistoryModalOpen] = useState<string | null>(null);
 
   // Función para cargar técnicos (reutilizable)
   const loadTechnicians = useCallback(async () => {
@@ -434,7 +435,7 @@ export default function AdminReports() {
         Reportes Administrativos
       </h3>
 
-      <div className="mb-6 space-y-4">
+      <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -536,7 +537,106 @@ export default function AdminReports() {
           <div className="text-center text-slate-500 py-4">Cargando...</div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            {/* Vista de Cards para Móvil */}
+            <div className="lg:hidden space-y-3">
+              {weeklyOrders.map((o) => (
+                <div
+                  key={o.id}
+                  className={`bg-white rounded-lg border ${
+                    o.status === "returned" || o.status === "cancelled"
+                      ? "border-red-200 bg-red-50/30"
+                      : "border-slate-200"
+                  } shadow-sm`}
+                >
+                  <div className="p-3 border-b border-slate-100">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="text-[10px] text-slate-500 mb-0.5">N° Orden</div>
+                        <div className="text-sm font-bold text-slate-900">{o.order_number || "-"}</div>
+                      </div>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          o.status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : o.status === "paid"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : o.status === "returned"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {o.status === "pending" ? "Pend." : o.status === "paid" ? "Pagado" : o.status === "returned" ? "Dev." : "Canc."}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 mb-1">
+                      {formatDate(o.created_at)}
+                      {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
+                        <button
+                          onClick={() => setHistoryModalOpen(o.id)}
+                          className="ml-2 text-blue-600 hover:text-blue-800 hover:underline text-[10px]"
+                        >
+                          Ver historial
+                        </button>
+                      )}
+                    </div>
+                    {o.receipt_number && (
+                      <div className="text-xs">
+                        <span className="text-slate-500">Recibo: </span>
+                        {o.receipt_url ? (
+                          <a
+                            href={o.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {o.receipt_number}
+                          </a>
+                        ) : (
+                          <span className="text-slate-700">{o.receipt_number}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div>
+                      <div className="text-[10px] text-slate-500 mb-0.5">Técnico</div>
+                      <div className="text-sm text-slate-900">{(o as any).technician?.name || "N/A"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-500 mb-0.5">Equipo y Servicio</div>
+                      <div className="text-sm font-medium text-slate-900">{o.device}</div>
+                      <div className="text-xs text-slate-600">{o.service_description}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                      <div>
+                        <div className="text-[10px] text-slate-500 mb-0.5">Repuesto</div>
+                        <div className="text-sm font-medium text-slate-900">{formatCLP(o.replacement_cost || 0)}</div>
+                        <div className="text-xs text-slate-600">{(o as any).suppliers?.name || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500 mb-0.5">Pago</div>
+                        <div className="text-sm text-slate-700">{o.payment_method || "-"}</div>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="text-[10px] text-slate-500 mb-0.5">Comisión</div>
+                      <div className="text-base font-bold text-brand">{formatCLP(o.commission_amount || 0)}</div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteOrder(o.id)}
+                      disabled={deletingOrderId === o.id}
+                      className="w-full mt-2 px-3 py-2 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deletingOrderId === o.id ? "Eliminando..." : "🗑️ Eliminar"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Vista de Tabla para Desktop */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left border-b border-slate-200">
@@ -657,6 +757,39 @@ export default function AdminReports() {
           </>
         )}
       </div>
+
+      {/* Modal de Historial de Cambios */}
+      {historyModalOpen && (() => {
+        const order = weeklyOrders.find(o => o.id === historyModalOpen);
+        if (!order || !order.original_created_at) return null;
+        const originalDate = new Date(order.original_created_at);
+        const currentDate = new Date(order.created_at);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setHistoryModalOpen(null)}>
+            <div className="bg-white rounded-lg p-4 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-slate-700">Historial de Cambios</h3>
+                <button onClick={() => setHistoryModalOpen(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <span className="font-medium text-slate-600">Fecha Original:</span>
+                  <span className="ml-2 text-slate-700">{originalDate.toLocaleDateString('es-CL')}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-600">Fecha Actual:</span>
+                  <span className="ml-2 text-slate-700">{currentDate.toLocaleDateString('es-CL')}</span>
+                </div>
+                {originalDate.getTime() !== currentDate.getTime() && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-700">
+                    ⚠️ La fecha fue modificada
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Sección de Historial de Liquidaciones Calculadas */}
       {(dateRangeFilter === "custom" && customStartDate && customEndDate) || dateRangeFilter === "week" ? (

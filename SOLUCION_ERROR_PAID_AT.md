@@ -83,3 +83,4 @@ WHERE status = 'paid' AND (payout_week IS NULL OR payout_year IS NULL);
 Esta migración es **segura** y no afecta los datos existentes. Solo agrega nuevas columnas y calcula valores para órdenes que ya estaban pagadas.
 
 
+

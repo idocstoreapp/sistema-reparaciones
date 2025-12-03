@@ -42,7 +42,15 @@ function OrdersTableForEncargado({ me }: { me: Profile }) {
   );
 }
 
-function Header({ userName, userRole }: { userName: string; userRole: string }) {
+function Header({ 
+  userName, 
+  userRole, 
+  onMenuToggle 
+}: { 
+  userName: string; 
+  userRole: string;
+  onMenuToggle?: () => void;
+}) {
   async function handleLogout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -51,29 +59,47 @@ function Header({ userName, userRole }: { userName: string; userRole: string }) 
   const hasSidebar = userRole === "admin" || userRole === "encargado";
 
   return (
-    <header className={`bg-brand shadow-lg border-b-2 border-brand-light ${hasSidebar ? 'pl-64' : ''}`}>
+    <header className="bg-brand shadow-lg border-b-2 border-brand-light fixed top-0 left-0 right-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            {/* Botón hamburguesa para móvil */}
+            {hasSidebar && onMenuToggle && (
+              <button
+                onClick={onMenuToggle}
+                className="lg:hidden text-brand-white p-2 hover:bg-brand-light rounded-md transition-colors"
+                aria-label="Abrir menú"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
             <img 
               src="/logo.png" 
               alt="IDocStore Logo" 
-              className="h-16 w-auto object-contain"
+              className="h-24 sm:h-32 w-auto object-contain"
             />
-            <div>
-              <h1 className="text-lg font-bold text-brand-white">
+            <div className="hidden sm:block">
+              <h1 className="text-base sm:text-lg font-bold text-brand-white">
                 Registro de Servicios
               </h1>
               <p className="text-xs text-brand-white">
                 {userName} • {userRole === "admin" ? "Administrador" : userRole === "encargado" ? "Encargado" : "Técnico"}
               </p>
             </div>
+            <div className="sm:hidden">
+              <h1 className="text-sm font-bold text-brand-white truncate max-w-[150px]">
+                {userName}
+              </h1>
+            </div>
           </div>
           <button
             onClick={handleLogout}
-            className="px-4 py-2 text-sm font-medium text-brand-white bg-brand-light border-2 border-brand-light rounded-md hover:bg-white hover:text-brand transition-colors"
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-brand-white bg-brand-light border-2 border-brand-light rounded-md hover:bg-white hover:text-brand transition-colors whitespace-nowrap"
           >
-            Cerrar Sesión
+            <span className="hidden sm:inline">Cerrar Sesión</span>
+            <span className="sm:hidden">Salir</span>
           </button>
         </div>
       </div>
@@ -85,17 +111,17 @@ function TechnicalView({ me }: { me: Profile }) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
           Dashboard - {me.name}
         </h1>
-        <p className="text-slate-600">Técnico Especialista</p>
+        <p className="text-sm sm:text-base text-slate-600">Técnico Especialista</p>
       </div>
 
       <WeeklySummary technicianId={me.id} refreshKey={refreshKey} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <OrderForm
           technicianId={me.id}
           onSaved={() => setRefreshKey((x) => x + 1)}
@@ -117,6 +143,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentSection, setCurrentSection] = useState<DashboardSection>("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,12 +255,12 @@ export default function Dashboard() {
         );
       case "reports":
         return me.role === "admin" ? (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
                 Reportes Administrativos
               </h1>
-              <p className="text-slate-600">
+              <p className="text-sm sm:text-base text-slate-600">
                 Visualiza reportes semanales y mensuales de operaciones
               </p>
             </div>
@@ -242,12 +269,12 @@ export default function Dashboard() {
         ) : null;
       case "suppliers":
         return me.role === "admin" ? (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
                 Compra a Proveedores
               </h1>
-              <p className="text-slate-600">
+              <p className="text-sm sm:text-base text-slate-600">
                 Gestiona y consulta las compras realizadas a proveedores
               </p>
             </div>
@@ -256,12 +283,12 @@ export default function Dashboard() {
         ) : null;
       case "users":
         return me.role === "admin" ? (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
                 Gestión de Usuarios
               </h1>
-              <p className="text-slate-600">
+              <p className="text-sm sm:text-base text-slate-600">
                 Administra técnicos y administradores del sistema
               </p>
             </div>
@@ -270,12 +297,12 @@ export default function Dashboard() {
         ) : null;
       case "payments":
         return me.role === "admin" ? (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
                 Pago a Técnicos
               </h1>
-              <p className="text-slate-600">
+              <p className="text-sm sm:text-base text-slate-600">
                 Gestiona pagos, liquidaciones y ajustes de sueldo de técnicos
               </p>
             </div>
@@ -284,12 +311,12 @@ export default function Dashboard() {
         ) : null;
       case "orders":
         return (
-          <div className="space-y-6">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
                 Órdenes de Reparación
               </h1>
-              <p className="text-slate-600">
+              <p className="text-sm sm:text-base text-slate-600">
                 {me.role === "admin" 
                   ? "Visualiza todas las órdenes del sistema"
                   : "Visualiza las órdenes de tu sucursal"}
@@ -312,18 +339,24 @@ export default function Dashboard() {
   };
 
   return (
-    <div>
-      <Header userName={me.name} userRole={me.role} />
-      <div className="flex">
+    <div className="min-h-screen bg-slate-50">
+      <Header 
+        userName={me.name} 
+        userRole={me.role}
+        onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+      />
+      <div className="flex pt-20">
         {hasSidebar && (
           <Sidebar
             currentSection={currentSection}
             onSectionChange={setCurrentSection}
             userRole={me.role}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
           />
         )}
-        <main className={`flex-1 ${hasSidebar ? 'ml-64' : ''}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className={`flex-1 w-full ${hasSidebar ? 'lg:ml-64' : ''}`}>
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6">
             {renderContent()}
           </div>
         </main>

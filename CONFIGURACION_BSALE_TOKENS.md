@@ -98,3 +98,4 @@ El sistema ahora:
 - Asegúrate de que la URL de la API sea correcta (por defecto: `https://api.bsale.cl`)
 
 
+

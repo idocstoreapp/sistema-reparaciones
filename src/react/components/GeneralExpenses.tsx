@@ -420,7 +420,54 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
       </div>
 
       {/* Tabla de gastos */}
-      <div className="overflow-x-auto">
+      {/* Vista de Cards para Móvil */}
+      <div className="lg:hidden space-y-3">
+        {expenses.length === 0 ? (
+          <div className="bg-white rounded-lg border border-slate-200 p-6 text-center text-slate-500">
+            No hay gastos registrados
+          </div>
+        ) : (
+          expenses.map((exp) => (
+            <div
+              key={exp.id}
+              className="bg-white rounded-lg border border-slate-200 shadow-sm p-4"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <div className="text-xs text-slate-500 mb-0.5">Fecha</div>
+                  <div className="text-sm font-medium text-slate-900">{formatDate(exp.fecha)}</div>
+                </div>
+                <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                  {exp.tipo === "arriendo" ? "Arriendo" :
+                   exp.tipo === "internet" ? "Internet" :
+                   exp.tipo === "luz" ? "Luz" :
+                   exp.tipo === "agua" ? "Agua" :
+                   exp.tipo === "facturas" ? "Facturas" :
+                   exp.tipo === "servicios" ? "Servicios" :
+                   exp.tipo}
+                </span>
+              </div>
+              <div className="mb-2">
+                <div className="text-xs text-slate-500 mb-0.5">Sucursal</div>
+                <div className="text-sm text-slate-900">{(exp.branch as Branch)?.name || "N/A"}</div>
+              </div>
+              <div className="mb-2">
+                <div className="text-xs text-slate-500 mb-0.5">Descripción</div>
+                <div className="text-sm text-slate-900">{exp.descripcion || "-"}</div>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <div className="text-xs text-slate-500">
+                  Registrado por: <span className="text-slate-900">{(exp.user as Profile)?.name || "N/A"}</span>
+                </div>
+                <div className="text-base font-bold text-brand">{formatCLP(exp.monto)}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Vista de Tabla para Desktop */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200">

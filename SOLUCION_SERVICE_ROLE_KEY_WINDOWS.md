@@ -136,3 +136,4 @@ Si después de seguir estos pasos aún no funciona:
 3. Verifica que las claves de Supabase son correctas (cópialas de nuevo)
 4. Revisa `CONFIGURACION_WINDOWS.md` para más detalles
 
+

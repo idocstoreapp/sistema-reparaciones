@@ -88,3 +88,4 @@ LEFT JOIN branches b ON u.sucursal_id = b.id
 WHERE u.role IN ('technician', 'encargado')
 ORDER BY u.local, u.name;
 
+

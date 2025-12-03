@@ -407,51 +407,96 @@ export default function SupplierPurchases() {
           No se encontraron compras en el período seleccionado
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left border-b border-slate-200">
-                <th className="py-3 px-2 font-semibold text-slate-700">Fecha</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">N° Orden</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Proveedor</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Equipo</th>
-                <th className="py-3 px-2 font-semibold text-slate-700">Servicio</th>
-                <th className="py-3 px-2 font-semibold text-slate-700 text-right">Costo Repuesto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPurchases.map((purchase) => (
-                <tr
-                  key={purchase.id}
-                  className="border-b border-slate-100 hover:bg-slate-50"
-                >
-                  <td className="py-3 px-2">{formatDate(purchase.paid_at || purchase.created_at)}</td>
-                  <td className="py-3 px-2 font-medium text-slate-900">
-                    {purchase.order_number}
+        <>
+          {/* Vista de Cards para Móvil */}
+          <div className="lg:hidden space-y-3">
+            {filteredPurchases.map((purchase) => (
+              <div
+                key={purchase.id}
+                className="bg-white rounded-lg border border-slate-200 shadow-sm p-4"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="text-[10px] text-slate-500 mb-0.5">N° Orden</div>
+                    <div className="text-sm font-bold text-slate-900">{purchase.order_number}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500 mb-0.5">Costo</div>
+                    <div className="text-base font-bold text-brand">{formatCLP(purchase.replacement_cost)}</div>
+                  </div>
+                </div>
+                <div className="text-xs text-slate-600 mb-3">
+                  {formatDate(purchase.paid_at || purchase.created_at)}
+                </div>
+                <div className="space-y-2 mb-3">
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-0.5">Proveedor</div>
+                    <div className="text-sm font-medium text-slate-900">{purchase.supplier_name}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-0.5">Equipo y Servicio</div>
+                    <div className="text-sm text-slate-700">{purchase.device}</div>
+                    <div className="text-xs text-slate-600">{purchase.service_description}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {/* Total en móvil */}
+            <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-semibold text-slate-900">Total:</span>
+                <span className="text-lg font-bold text-brand">{formatCLP(totalSpent)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Vista de Tabla para Desktop */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-slate-200">
+                  <th className="py-3 px-2 font-semibold text-slate-700">Fecha</th>
+                  <th className="py-3 px-2 font-semibold text-slate-700">N° Orden</th>
+                  <th className="py-3 px-2 font-semibold text-slate-700">Proveedor</th>
+                  <th className="py-3 px-2 font-semibold text-slate-700">Equipo</th>
+                  <th className="py-3 px-2 font-semibold text-slate-700">Servicio</th>
+                  <th className="py-3 px-2 font-semibold text-slate-700 text-right">Costo Repuesto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPurchases.map((purchase) => (
+                  <tr
+                    key={purchase.id}
+                    className="border-b border-slate-100 hover:bg-slate-50"
+                  >
+                    <td className="py-3 px-2">{formatDate(purchase.paid_at || purchase.created_at)}</td>
+                    <td className="py-3 px-2 font-medium text-slate-900">
+                      {purchase.order_number}
+                    </td>
+                    <td className="py-3 px-2">{purchase.supplier_name}</td>
+                    <td className="py-3 px-2 text-slate-600">{purchase.device}</td>
+                    <td className="py-3 px-2 text-slate-600">
+                      {purchase.service_description}
+                    </td>
+                    <td className="py-3 px-2 text-right font-semibold text-slate-900">
+                      {formatCLP(purchase.replacement_cost)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 bg-slate-50">
+                  <td colSpan={5} className="py-3 px-2 font-semibold text-slate-900 text-right">
+                    Total:
                   </td>
-                  <td className="py-3 px-2">{purchase.supplier_name}</td>
-                  <td className="py-3 px-2 text-slate-600">{purchase.device}</td>
-                  <td className="py-3 px-2 text-slate-600">
-                    {purchase.service_description}
-                  </td>
-                  <td className="py-3 px-2 text-right font-semibold text-slate-900">
-                    {formatCLP(purchase.replacement_cost)}
+                  <td className="py-3 px-2 text-right font-bold text-brand text-lg">
+                    {formatCLP(totalSpent)}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-300 bg-slate-50">
-                <td colSpan={5} className="py-3 px-2 font-semibold text-slate-900 text-right">
-                  Total:
-                </td>
-                <td className="py-3 px-2 text-right font-bold text-brand text-lg">
-                  {formatCLP(totalSpent)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

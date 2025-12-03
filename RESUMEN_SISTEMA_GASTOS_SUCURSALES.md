@@ -273,3 +273,4 @@ Si encuentras problemas:
 4. Verifica que los usuarios tienen los roles y sucursales correctas asignadas
 
 
+

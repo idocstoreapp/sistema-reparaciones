@@ -24,3 +24,4 @@ CHECK (tipo IS NOT NULL AND LENGTH(TRIM(tipo)) > 0);
 
 -- Nota: Ahora se pueden agregar tipos personalizados además de los predefinidos
 
+

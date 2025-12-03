@@ -221,3 +221,4 @@ COMMENT ON COLUMN orders.sucursal_id IS 'ID de la sucursal a la que pertenece la
 --    UPDATE orders SET sucursal_id = (SELECT sucursal_id FROM users WHERE id = orders.technician_id) WHERE sucursal_id IS NULL;
 
 
+

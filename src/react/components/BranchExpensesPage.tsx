@@ -340,14 +340,14 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
     : `Rango: ${formatDate(filterDates.startDate)} - ${formatDate(filterDates.endDate)}`;
 
   return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
           {userRole === "admin" 
             ? "Gestión de Sucursales y Gastos"
             : "Gastos Hormiga de tu Sucursal"}
         </h1>
-        <p className="text-slate-600">
+        <p className="text-sm sm:text-base text-slate-600">
           {userRole === "admin"
             ? "Administra sucursales, gastos hormiga, gastos generales y visualiza KPIs por sucursal"
             : "Gestiona los gastos hormiga de tu sucursal"}
@@ -356,9 +356,9 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
 
       {/* Filtros de Fecha (solo admin) */}
       {userRole === "admin" && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Filtros de Período</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Filtros de Período</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Modo de Filtro
@@ -439,9 +439,9 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
 
       {/* KPIs Globales (solo admin) */}
       {userRole === "admin" && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Resumen Global</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Resumen Global</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
             <KpiCard
               title="Total Gastos Hormiga"
               value={formatCLP(globalSummary.total_small_expenses)}
@@ -509,7 +509,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
           {loadingSummary ? (
             <p className="text-slate-600">Cargando...</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               <KpiCard
                 title="Gastos Hormiga"
                 value={formatCLP(branchSummary.total_small_expenses)}
@@ -542,7 +542,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
 
       {/* Componentes de Gastos */}
       {userRole === "admin" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Gastos Hormiga */}
           {selectedBranch ? (
             <SmallExpenses

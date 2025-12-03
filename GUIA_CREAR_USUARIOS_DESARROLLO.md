@@ -197,3 +197,4 @@ Para desarrollo, puedes usar:
 ⚠️ **IMPORTANTE**: Estas son solo para desarrollo. En producción usa contraseñas seguras.
 
 
+

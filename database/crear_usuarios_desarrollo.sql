@@ -105,3 +105,4 @@ ORDER BY role;
 -- 5. Para iniciar sesión, usa el email y password configurados en Authentication
 
 
+

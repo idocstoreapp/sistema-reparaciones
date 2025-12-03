@@ -130,3 +130,4 @@ PUBLIC_BSALE_ACCESS_TOKENS=b2d5a1042405501fa165cd625919a9d4f531f6ce,0680bbf27194
 - **Múltiples empresas**: El sistema busca automáticamente en ambas empresas
 
 
+

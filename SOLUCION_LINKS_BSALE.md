@@ -54,3 +54,4 @@ Si las órdenes existentes tienen un `bsale_url` viejo guardado, necesitas ejecu
 **Solución**: Ejecuta el componente de actualización para que todas las órdenes tengan `bsale_id` y el formato correcto de URL.
 
 
+

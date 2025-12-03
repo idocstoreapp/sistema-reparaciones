@@ -110,3 +110,4 @@ ORDER BY proname;
 -- 3. Las funciones helper usan SECURITY DEFINER para evitar recursión en RLS
 -- 4. Si un usuario no puede iniciar sesión, verifica que exista en la tabla users con el mismo ID de auth.uid()
 
+

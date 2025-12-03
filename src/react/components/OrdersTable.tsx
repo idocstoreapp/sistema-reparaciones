@@ -61,6 +61,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
   const [adminActiveFilters, setAdminActiveFilters] = useState<LoadFilters | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<Record<string, { hasDuplicateReceipt: boolean }>>({});
+  const [actionsMenuOpen, setActionsMenuOpen] = useState<string | null>(null);
+  const [historyModalOpen, setHistoryModalOpen] = useState<string | null>(null);
+  const [paymentMethodModalOpen, setPaymentMethodModalOpen] = useState<string | null>(null);
+  const [receiptModalOpen, setReceiptModalOpen] = useState<string | null>(null);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState<string | null>(null);
 
   const localOptions = useMemo(() => {
     const locales = new Set<string>();
@@ -195,6 +200,18 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     adminRefreshKeyRef.current = refreshKey;
     void load(adminActiveFilters);
   }, [isAdmin, refreshKey, adminActiveFilters, hasAdminSearched, load]);
+
+  // Cerrar menú de acciones al hacer clic fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (actionsMenuOpen && !target.closest('.actions-menu-container')) {
+        setActionsMenuOpen(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [actionsMenuOpen]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -547,7 +564,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
         }
       }
 
-      setEditingId(null);
+      setReceiptModalOpen(null);
       setEditReceipt("");
       setEditReceiptUrl("");
       setEditPaymentMethod("");
@@ -970,25 +987,198 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
               </div>
             );
           })()}
-        <div className="overflow-x-auto">
-          <div className="inline-block min-w-full align-middle">
-            <div className="overflow-visible">
-              <table className="min-w-full divide-y divide-slate-200 text-xs">
+        {/* Vista de Cards para Móvil */}
+        <div className="lg:hidden space-y-3">
+          {filtered.map((o) => (
+            <div
+              key={o.id}
+              className={`bg-white rounded-lg border ${
+                o.status === "returned" || o.status === "cancelled"
+                  ? "border-red-200 bg-red-50/30"
+                  : duplicates[o.id]
+                  ? "border-amber-300 bg-amber-50/50"
+                  : "border-slate-200"
+              } shadow-sm`}
+            >
+              {/* Header de la card */}
+              <div className="p-3 border-b border-slate-100">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <div className="text-[10px] text-slate-500 mb-0.5">N° Orden</div>
+                    <div className="text-sm font-bold text-slate-900">{o.order_number || "-"}</div>
+                  </div>
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      o.status === "pending"
+                        ? "bg-amber-100 text-amber-700"
+                        : o.status === "paid"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : o.status === "returned"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {o.status === "pending" ? "Pend." : o.status === "paid" ? "Pagado" : o.status === "returned" ? "Dev." : "Canc."}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-600 mb-1">
+                  {formatDate(o.created_at)}
+                  {(o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime()) && (
+                    <button
+                      onClick={() => setHistoryModalOpen(o.id)}
+                      className="ml-2 text-blue-600 hover:text-blue-800 hover:underline text-[10px]"
+                    >
+                      Ver historial
+                    </button>
+                  )}
+                </div>
+                {o.receipt_number && (
+                  <div className="text-xs">
+                    <span className="text-slate-500">Recibo: </span>
+                    {o.receipt_url ? (
+                      <a
+                        href={o.receipt_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {o.receipt_number}
+                      </a>
+                    ) : (
+                      <span className="text-slate-700">{o.receipt_number}</span>
+                    )}
+                    {duplicates[o.id]?.hasDuplicateReceipt && (
+                      <span className="ml-1 text-amber-600 text-[10px]">⚠️</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Contenido principal */}
+              <div className="p-3 space-y-2">
+                <div>
+                  <div className="text-[10px] text-slate-500 mb-0.5">Equipo</div>
+                  <div className="text-sm font-medium text-slate-900">{o.device}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-500 mb-0.5">Servicio</div>
+                  <div className="text-sm text-slate-700">{o.service_description}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-0.5">Repuesto</div>
+                    <div className="text-sm font-medium text-slate-900">{formatCLP(o.replacement_cost || 0)}</div>
+                    <div className="text-xs text-slate-600">{(o as any).suppliers?.name || "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 mb-0.5">Costo Rep.</div>
+                    <div className="text-sm font-medium text-slate-900">{formatCLP(o.repair_cost || 0)}</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="text-[10px] text-slate-500 mb-0.5">Comisión</div>
+                  <div className="text-base font-bold text-brand">{formatCLP(o.commission_amount || 0)}</div>
+                </div>
+              </div>
+
+              {/* Botón para ver más detalles */}
+              {(technicianId || isAdmin) && (
+                <div className="p-3 border-t border-slate-100">
+                  <button
+                    onClick={() => setMobileDetailOpen(mobileDetailOpen === o.id ? null : o.id)}
+                    className="w-full px-3 py-2 text-xs font-medium text-brand border border-brand rounded-md hover:bg-brand hover:text-white transition"
+                  >
+                    {mobileDetailOpen === o.id ? "Ocultar detalles" : "Ver detalles y acciones"}
+                  </button>
+                </div>
+              )}
+
+              {/* Panel expandible de detalles */}
+              {mobileDetailOpen === o.id && (technicianId || isAdmin) && (
+                <div className="p-3 border-t border-slate-200 bg-slate-50 space-y-2">
+                  <button
+                    onClick={() => {
+                      void toggleNotes(o.id);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs bg-white border border-slate-300 rounded-md hover:bg-slate-100"
+                  >
+                    📝 Notas
+                  </button>
+                  {isAdmin && (o.status === "pending" || o.status === "paid") && (
+                    <button
+                      onClick={() => {
+                        setEditingCostsId(o.id);
+                        setEditReplacementCost(o.replacement_cost || 0);
+                        setEditRepairCost(o.repair_cost || 0);
+                        setMobileDetailOpen(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs bg-white border border-slate-300 rounded-md hover:bg-slate-100"
+                    >
+                      ✏️ Editar Montos
+                    </button>
+                  )}
+                  {(technicianId || isAdmin) && (o.status === "pending" || (isAdmin && o.status === "paid")) && (
+                    <button
+                      onClick={() => {
+                        setReceiptModalOpen(o.id);
+                        setEditReceipt(o.receipt_number || "");
+                        setEditReceiptUrl(o.receipt_url || "");
+                        setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
+                        const today = new Date().toISOString().split('T')[0];
+                        setEditReceiptDate(today);
+                        setMobileDetailOpen(null);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs bg-white border border-slate-300 rounded-md hover:bg-slate-100"
+                    >
+                      🧾 Recibo
+                    </button>
+                  )}
+                  {(technicianId || isAdmin) && (o.status === "pending" || o.status === "paid") && (
+                    <button
+                      onClick={() => {
+                        handleUpdateStatus(o.id, "returned");
+                        setMobileDetailOpen(null);
+                      }}
+                      disabled={updatingStatusId === o.id}
+                      className="w-full text-left px-3 py-2 text-xs bg-white border border-red-300 text-red-600 rounded-md hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {updatingStatusId === o.id ? "⏳ Devolviendo..." : "↩️ Devolver"}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        handleDeleteOrder(o.id);
+                        setMobileDetailOpen(null);
+                      }}
+                      disabled={deletingOrderId === o.id}
+                      className="w-full text-left px-3 py-2 text-xs bg-white border border-red-300 text-red-600 rounded-md hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {deletingOrderId === o.id ? "⏳ Eliminando..." : "🗑️ Eliminar"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Vista de Tabla para Desktop */}
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full divide-y divide-slate-200 text-xs">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Fecha</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">N° Orden</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Equipo</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-20">Fecha</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-32">Orden/Recibo/Pago</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-24">Equipo</th>
                     <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left">Servicio</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Pago</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Repuesto</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Proveedor</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right whitespace-nowrap">Costo Rep.</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Estado</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Recibo</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Comisión</th>
-                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Notas</th>
-                    {(technicianId || isAdmin) && <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap">Acciones</th>}
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right w-20">Repuesto</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-24">Proveedor</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right w-20">Costo Rep.</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-20">Estado</th>
+                    <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-right w-24">Comisión</th>
+                    {(technicianId || isAdmin) && <th className="py-2 px-2 text-xs font-semibold text-slate-700 text-left w-20">Acciones</th>}
                   </tr>
                 </thead>
             <tbody>
@@ -1001,72 +1191,65 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                       ? "bg-amber-50/50 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
                       : "hover:bg-slate-50"
                   }`}>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span>{formatDate(o.created_at)}</span>
-                          {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
-                            <span 
-                              className="text-[10px] text-amber-600 cursor-help" 
-                              title={`⚠️ Fecha modificada\nOriginal: ${new Date(o.original_created_at).toLocaleDateString('es-CL')}\nNueva: ${new Date(o.created_at).toLocaleDateString('es-CL')}`}
-                            >
-                              ⚠️
-                            </span>
-                          )}
-                        </div>
-                        {o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime() && (
-                          <span className="text-[9px] text-amber-600 italic block">
-                            <span className="font-medium">Original:</span> {new Date(o.original_created_at).toLocaleDateString('es-CL')} → 
-                            <span className="font-medium"> Cambiada a:</span> {new Date(o.created_at).toLocaleDateString('es-CL')}
-                          </span>
+                    <td className="py-2 px-2 text-xs">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium">{formatDate(o.created_at)}</span>
+                        {(o.original_created_at && new Date(o.original_created_at).getTime() !== new Date(o.created_at).getTime()) && (
+                          <button
+                            onClick={() => setHistoryModalOpen(o.id)}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline"
+                            title="Ver historial de cambios"
+                          >
+                            Ver historial
+                          </button>
                         )}
                       </div>
                     </td>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs font-medium">
-                      <div className="flex items-center gap-1">
-                        <span>{o.order_number || "-"}</span>
-                        {duplicates[o.id]?.hasDuplicateOrderNumber && (
-                          <span 
-                            className="text-amber-600 cursor-help font-bold" 
-                            title="⚠️ Este número de orden está duplicado"
-                          >
-                            ⚠️
-                          </span>
-                        )}
+                    <td className="py-2 px-2 text-xs">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-600 font-medium">N° Orden:</span>
+                          <span className="text-xs font-semibold">{o.order_number || "-"}</span>
+                          {duplicates[o.id]?.hasDuplicateOrderNumber && (
+                            <span className="text-amber-600 text-[11px]" title="⚠️ Duplicado">⚠️</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-600 font-medium">N° Recibo:</span>
+                          {o.receipt_number ? (
+                            o.receipt_url ? (
+                              <a
+                                href={o.receipt_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {o.receipt_number}
+                              </a>
+                            ) : (
+                              <span className="text-xs font-medium">{o.receipt_number}</span>
+                            )
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                          {duplicates[o.id]?.hasDuplicateReceipt && (
+                            <span className="text-amber-600 text-[11px]" title="⚠️ Duplicado">⚠️</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setPaymentMethodModalOpen(o.id)}
+                          className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline text-left"
+                          title="Ver medio de pago"
+                        >
+                          Ver medio de pago
+                        </button>
                       </div>
                     </td>
                     <td className="py-2 px-2 text-xs max-w-[120px] truncate" title={o.device}>{o.device}</td>
-                    <td className="py-2 px-2 text-xs text-slate-600 max-w-[150px]">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="truncate" title={o.service_description}>{o.service_description}</span>
-                        {o.receipt_number && (
-                          <span className="text-[10px] text-slate-500">
-                            Recibo: {(() => {
-                              const receiptLink = o.receipt_url;
-                              
-                              return receiptLink ? (
-                                <a
-                                  href={receiptLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium inline-flex items-center gap-0.5"
-                                  title="Abrir recibo"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {o.receipt_number}
-                                  <svg className="w-2.5 h-2.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              ) : (
-                                <span className="text-slate-600">{o.receipt_number}</span>
-                              );
-                            })()}
-                          </span>
-                        )}
-                      </div>
+                    <td className="py-2 px-2 text-xs text-slate-600">
+                      <span className="truncate block" title={o.service_description}>{o.service_description}</span>
                     </td>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs">{o.payment_method || "-"}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
                         <input
@@ -1122,145 +1305,38 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           : "Canc."}
                       </span>
                     </td>
-                    <td className="py-2 px-2 whitespace-nowrap text-xs">
-                    {editingId === o.id ? (
-                      <div className="space-y-1">
-                        <input
-                          type="text"
-                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
-                          value={editReceipt}
-                          onChange={(e) => setEditReceipt(e.target.value)}
-                          placeholder="N° Boleta (opcional)"
-                          autoFocus
-                        />
-                        <input
-                          type="url"
-                          className="w-full border border-slate-300 rounded px-1.5 py-0.5 text-xs"
-                          value={editReceiptUrl}
-                          onChange={(e) => setEditReceiptUrl(e.target.value)}
-                          placeholder="Link del recibo (opcional)"
-                        />
-                        <select
-                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
-                          value={editPaymentMethod || o.payment_method || ""}
-                          onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
-                        >
-                          <option value="">Sin método</option>
-                          <option value="EFECTIVO">Efectivo</option>
-                          <option value="TARJETA">Tarjeta</option>
-                          <option value="TRANSFERENCIA">Transferencia</option>
-                        </select>
-                        <input
-                          type="date"
-                          className="w-24 border border-slate-300 rounded px-1.5 py-0.5 text-xs"
-                          value={editReceiptDate}
-                          onChange={(e) => setEditReceiptDate(e.target.value)}
-                          placeholder="Fecha de recibo"
-                          title="Selecciona la fecha del recibo (puede ser futura)"
-                        />
-                        <p className="text-[10px] text-slate-500">
-                          Selecciona la fecha del recibo. Si cae en otra semana, la orden se moverá a esa semana.
-                        </p>
-                      </div>
-                    ) : o.receipt_number ? (
-                      <div className="flex items-center gap-1">
-                        {o.receipt_url ? (
-                          <a
-                            href={o.receipt_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1"
-                            title="Abrir recibo (se abre en nueva pestaña)"
-                          >
-                            {o.receipt_number}
-                            <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                        ) : (
-                          <span className="text-slate-700 text-xs">{o.receipt_number}</span>
-                        )}
-                        {duplicates[o.id]?.hasDuplicateReceipt && (
-                          <span 
-                            className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-medium rounded border border-amber-200"
-                            title="⚠️ Este número de recibo está duplicado en otra orden"
-                          >
-                            ⚠️ Duplicado
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 text-xs">-</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-2 font-semibold text-brand whitespace-nowrap text-xs">
+                  <td className="py-2 px-2 font-semibold text-brand text-right text-xs">
                     {formatCLP(o.commission_amount || 0)}
                   </td>
-                    <td className="py-2 px-2 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => void toggleNotes(o.id)}
-                        className="px-2 py-0.5 border border-slate-300 text-xs rounded hover:bg-slate-100 transition"
-                      >
-                        {expandedOrderId === o.id ? "Ocultar" : "Notas"}
-                      </button>
-                    </td>
                     {(technicianId || isAdmin) && (
-                      <td className="py-2 px-2">
-                        <div className="flex flex-col gap-1">
-                          {editingCostsId === o.id ? (
-                            <>
-                              <button
-                                onClick={() => handleUpdateCosts(o.id)}
-                                disabled={updatingCostsId === o.id}
-                                className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {updatingCostsId === o.id ? "Guardando..." : "Guardar"}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingCostsId(null);
-                                  setEditReplacementCost(0);
-                                  setEditRepairCost(0);
-                                }}
-                                disabled={updatingCostsId === o.id}
-                                className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition disabled:opacity-50"
-                              >
-                                Cancelar
-                              </button>
-                            </>
-                          ) : editingId === o.id ? (
-                            <>
-                              <button
-                                onClick={() => handleUpdateReceipt(o.id)}
-                                className="px-2 py-0.5 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
-                              >
-                                Guardar
-                              </button>
+                      <td className="py-2 px-2 relative">
+                        <button
+                          onClick={() => setActionsMenuOpen(actionsMenuOpen === o.id ? null : o.id)}
+                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 transition"
+                        >
+                          Ver acciones
+                        </button>
+                        {actionsMenuOpen === o.id && (
+                          <div className="actions-menu-container absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg z-50">
+                            <div className="py-1">
                               <button
                                 onClick={() => {
-                                  setEditingId(null);
-                                  setEditReceipt("");
-                                  setEditReceiptUrl("");
-                                  setEditPaymentMethod("");
-                                  setEditReceiptDate("");
+                                  void toggleNotes(o.id);
+                                  setActionsMenuOpen(null);
                                 }}
-                                className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition"
+                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100"
                               >
-                                Cancelar
+                                Notas
                               </button>
-                            </>
-                          ) : (
-                            <>
                               {isAdmin && (o.status === "pending" || o.status === "paid") && (
                                 <button
                                   onClick={() => {
                                     setEditingCostsId(o.id);
                                     setEditReplacementCost(o.replacement_cost || 0);
                                     setEditRepairCost(o.repair_cost || 0);
+                                    setActionsMenuOpen(null);
                                   }}
-                                  className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition font-medium"
-                                  title="Editar montos de repuesto y reparación"
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100"
                                 >
                                   Editar Montos
                                 </button>
@@ -1268,40 +1344,96 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                               {(technicianId || isAdmin) && (o.status === "pending" || (isAdmin && o.status === "paid")) && (
                                 <button
                                   onClick={() => {
-                                    setEditingId(o.id);
+                                    setReceiptModalOpen(o.id);
                                     setEditReceipt(o.receipt_number || "");
                                     setEditReceiptUrl(o.receipt_url || "");
                                     setEditPaymentMethod((o.payment_method as PaymentMethod) || "");
-                                    // Inicializar con la fecha de hoy o la fecha original de la orden
                                     const today = new Date().toISOString().split('T')[0];
                                     setEditReceiptDate(today);
+                                    setActionsMenuOpen(null);
                                   }}
-                                  className="px-2 py-0.5 bg-brand-light text-brand-white text-xs rounded hover:bg-white hover:text-brand border border-brand-light hover:border-white transition font-medium"
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100"
                                 >
                                   Recibo
                                 </button>
                               )}
                               {(technicianId || isAdmin) && (o.status === "pending" || o.status === "paid") && (
                                 <button
-                                  onClick={() => handleUpdateStatus(o.id, "returned")}
+                                  onClick={() => {
+                                    handleUpdateStatus(o.id, "returned");
+                                    setActionsMenuOpen(null);
+                                  }}
                                   disabled={updatingStatusId === o.id}
-                                  className="px-1 py-0.5 text-red-600 text-xs hover:text-red-700 hover:underline transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Marcar como devuelto"
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-100 disabled:opacity-50"
                                 >
-                                  {updatingStatusId === o.id ? "..." : "Devolver"}
+                                  {updatingStatusId === o.id ? "Devolviendo..." : "Devolver"}
                                 </button>
                               )}
                               {isAdmin && (
                                 <button
-                                  onClick={() => handleDeleteOrder(o.id)}
+                                  onClick={() => {
+                                    handleDeleteOrder(o.id);
+                                    setActionsMenuOpen(null);
+                                  }}
                                   disabled={deletingOrderId === o.id}
-                                  className="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                                 >
-                                  {deletingOrderId === o.id ? "..." : "Eliminar"}
+                                  {deletingOrderId === o.id ? "Eliminando..." : "Eliminar"}
                                 </button>
                               )}
-                            </>
-                          )}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    )}
+                    {editingCostsId === o.id && (
+                      <td colSpan={10} className="py-3 px-2 bg-slate-50 border-t border-slate-200">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-slate-600 block mb-0.5">Costo Repuesto</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                              value={editReplacementCost}
+                              onChange={(e) => setEditReplacementCost(parseFloat(e.target.value) || 0)}
+                              placeholder="0"
+                              autoFocus
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-600 block mb-0.5">Costo Reparación</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                              value={editRepairCost}
+                              onChange={(e) => setEditRepairCost(parseFloat(e.target.value) || 0)}
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleUpdateCosts(o.id)}
+                            disabled={updatingCostsId === o.id}
+                            className="px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 transition font-medium disabled:opacity-50"
+                          >
+                            {updatingCostsId === o.id ? "Guardando..." : "Guardar"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingCostsId(null);
+                              setEditReplacementCost(0);
+                              setEditRepairCost(0);
+                            }}
+                            disabled={updatingCostsId === o.id}
+                            className="px-3 py-1 bg-slate-200 text-slate-700 text-xs rounded hover:bg-slate-300 transition disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
                         </div>
                       </td>
                     )}
@@ -1420,11 +1552,179 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
               ))}
                 </tbody>
               </table>
-            </div>
-          </div>
         </div>
         </>
       )}
+
+      {/* Modal de Historial de Cambios */}
+      {historyModalOpen && (() => {
+        const order = orders.find(o => o.id === historyModalOpen);
+        if (!order || !order.original_created_at) return null;
+        const originalDate = new Date(order.original_created_at);
+        const currentDate = new Date(order.created_at);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setHistoryModalOpen(null)}>
+            <div className="bg-white rounded-lg p-4 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-slate-700">Historial de Cambios</h3>
+                <button onClick={() => setHistoryModalOpen(null)} className="text-slate-400 hover:text-slate-600">
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <span className="font-medium text-slate-600">Fecha Original:</span>
+                  <span className="ml-2 text-slate-700">{originalDate.toLocaleDateString('es-CL')}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-600">Fecha Actual:</span>
+                  <span className="ml-2 text-slate-700">{currentDate.toLocaleDateString('es-CL')}</span>
+                </div>
+                {originalDate.getTime() !== currentDate.getTime() && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-700">
+                    ⚠️ La fecha fue modificada
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal de Medio de Pago */}
+      {paymentMethodModalOpen && (() => {
+        const order = orders.find(o => o.id === paymentMethodModalOpen);
+        if (!order) return null;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setPaymentMethodModalOpen(null)}>
+            <div className="bg-white rounded-lg p-4 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-slate-700">Medio de Pago</h3>
+                <button onClick={() => setPaymentMethodModalOpen(null)} className="text-slate-400 hover:text-slate-600">
+                  ✕
+                </button>
+              </div>
+              <div className="text-xs">
+                <div className="mb-2">
+                  <span className="font-medium text-slate-600">Orden:</span>
+                  <span className="ml-2 text-slate-700">{order.order_number || "-"}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-600">Medio de Pago:</span>
+                  <span className="ml-2 text-slate-700">{order.payment_method || "No especificado"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal de Recibo */}
+      {receiptModalOpen && (() => {
+        const order = orders.find(o => o.id === receiptModalOpen);
+        if (!order) return null;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+            setReceiptModalOpen(null);
+            setEditReceipt("");
+            setEditReceiptUrl("");
+            setEditPaymentMethod("");
+            setEditReceiptDate("");
+          }}>
+            <div className="bg-white rounded-lg p-5 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-base font-semibold text-slate-700">Editar Recibo - Orden {order.order_number}</h3>
+                <button 
+                  onClick={() => {
+                    setReceiptModalOpen(null);
+                    setEditReceipt("");
+                    setEditReceiptUrl("");
+                    setEditPaymentMethod("");
+                    setEditReceiptDate("");
+                  }} 
+                  className="text-slate-400 hover:text-slate-600 text-lg"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">N° Boleta (opcional)</label>
+                  <input
+                    type="text"
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
+                    value={editReceipt}
+                    onChange={(e) => setEditReceipt(e.target.value)}
+                    placeholder="Ingresa el número de boleta"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Link del recibo (opcional)</label>
+                  <input
+                    type="url"
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
+                    value={editReceiptUrl}
+                    onChange={(e) => setEditReceiptUrl(e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Medio de pago</label>
+                    <select
+                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
+                      value={editPaymentMethod || order.payment_method || ""}
+                      onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                    >
+                      <option value="">Sin método</option>
+                      <option value="EFECTIVO">Efectivo</option>
+                      <option value="TARJETA">Tarjeta</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Fecha de recibo</label>
+                    <input
+                      type="date"
+                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
+                      value={editReceiptDate}
+                      onChange={(e) => setEditReceiptDate(e.target.value)}
+                      title="Selecciona la fecha del recibo (puede ser futura)"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                  💡 Selecciona la fecha del recibo. Si cae en otra semana, la orden se moverá a esa semana.
+                </p>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setReceiptModalOpen(null);
+                      setEditReceipt("");
+                      setEditReceiptUrl("");
+                      setEditPaymentMethod("");
+                      setEditReceiptDate("");
+                    }}
+                    className="flex-1 px-4 py-2 border border-slate-300 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleUpdateReceipt(order.id);
+                      setReceiptModalOpen(null);
+                    }}
+                    className="flex-1 px-4 py-2 bg-brand-light text-white rounded-md text-sm font-medium hover:bg-brand transition"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

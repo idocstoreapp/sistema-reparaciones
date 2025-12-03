@@ -21,3 +21,4 @@ CREATE INDEX IF NOT EXISTS idx_orders_bsale_id ON orders(bsale_id) WHERE bsale_i
 --    necesitarán ser re-validadas para obtener el bsale_id
 
 
+
