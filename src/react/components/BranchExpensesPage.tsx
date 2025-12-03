@@ -549,6 +549,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
               sucursalId={selectedBranch}
               refreshKey={combinedRefreshKey}
               dateFilter={filterDates}
+              userRole={userRole}
             />
           ) : (
             <div className="bg-white rounded-lg shadow-md p-6">
@@ -562,6 +563,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
               sucursalId={selectedBranch}
               refreshKey={combinedRefreshKey}
               dateFilter={filterDates}
+              userRole={userRole}
             />
           ) : (
             <div className="bg-white rounded-lg shadow-md p-6">
