@@ -28,3 +28,4 @@ CHECK (tipo IS NOT NULL AND LENGTH(TRIM(tipo)) > 0);
 
 
 
+
