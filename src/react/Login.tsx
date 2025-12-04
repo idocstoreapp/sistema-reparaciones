@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Footer from "./components/Footer";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -35,7 +36,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand to-brand-dark">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-brand to-brand-dark">
       <form
         onSubmit={onLogin}
         className="max-w-md w-full bg-white p-8 rounded-lg shadow-2xl space-y-6"
@@ -92,6 +93,7 @@ export default function Login() {
           {loading ? "Ingresando..." : "Entrar"}
         </button>
       </form>
+      <Footer />
     </div>
   );
 }

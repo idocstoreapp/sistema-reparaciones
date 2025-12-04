@@ -125,3 +125,14 @@ npm run build
 - Los administradores tienen acceso completo
 - Autenticación manejada por Supabase Auth
 
+---
+
+## 👨‍💻 Desarrollador
+
+**Jonathan Guarirapa** - Desarrollador de aplicaciones y sitios webs
+
+- 🌐 Portfolio: [jonadevel-portfolio.vercel.app](https://jonadevel-portfolio.vercel.app)
+- 📱 WhatsApp: [+56962614851](https://wa.me/56962614851)
+- 📷 Instagram: [@jonacrd1](https://instagram.com/jonacrd1)
+- ✉️ Email: [jona.develp@gmail.com](mailto:jona.develp@gmail.com)
+

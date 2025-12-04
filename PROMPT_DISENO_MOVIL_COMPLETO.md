@@ -437,3 +437,4 @@ Al finalizar, toda la aplicación debe:
 
 **IMPORTANTE**: Usa los componentes ya convertidos (OrdersTable, AdminReports, SupplierPurchases, UserManagement, SmallExpenses, GeneralExpenses) como referencia para mantener consistencia en el diseño.
 
+

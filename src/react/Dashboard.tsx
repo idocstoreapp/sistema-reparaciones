@@ -16,6 +16,7 @@ import AdminReports from "./components/AdminReports";
 import SupplierPurchases from "./components/SupplierPurchases";
 import UserManagement from "./components/UserManagement";
 import TechnicianPayments from "./components/TechnicianPayments";
+import Footer from "./components/Footer";
 
 // Componente helper para órdenes del encargado
 function OrdersTableForEncargado({ me }: { me: Profile }) {
@@ -359,8 +360,9 @@ export default function Dashboard() {
           />
         )}
         <main className={`flex-1 w-full ${hasSidebar ? 'lg:ml-64' : ''}`}>
-          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 flex flex-col min-h-[calc(100vh-5rem)]">
             {renderContent()}
+            <Footer />
           </div>
         </main>
       </div>
