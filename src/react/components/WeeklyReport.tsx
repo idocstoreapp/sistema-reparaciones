@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, formatDate } from "@/lib/date";
+import { currentWeekRange, formatDate, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
@@ -76,32 +76,153 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
         : null;
 
       // Consulta para órdenes de la semana
-      // ⚠️ CAMBIO CRÍTICO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
-      // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
-      let ordersQuery = supabase
+      // ⚠️ CAMBIO: Simplificar la consulta para mostrar TODAS las órdenes relevantes
+      // Hacer consultas separadas para cada tipo de orden para evitar problemas con .or()
+      
+      let allOrders: any[] = [];
+      
+      // 1. Órdenes pagadas: 
+      //    - Si hay liquidación: solo las pagadas DESPUÉS de la liquidación
+      //    - Si NO hay liquidación: todas las pagadas de la semana actual
+      // Hacer múltiples consultas para cubrir todos los casos
+      let paidOrdersList: any[] = [];
+      
+      if (lastSettlementDate) {
+        // Si hay liquidación, solo mostrar órdenes pagadas DESPUÉS de la liquidación
+        const { data: paidAfterSettlement, error: paidError1 } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("technician_id", technicianId)
+          .eq("status", "paid")
+          .gte("paid_at", lastSettlementDate.toISOString());
+        
+        if (paidError1) {
+          console.error("❌ Error cargando órdenes pagadas (después de liquidación):", paidError1);
+        } else if (paidAfterSettlement) {
+          paidOrdersList = [...paidOrdersList, ...paidAfterSettlement];
+        }
+      } else {
+        // Si NO hay liquidación, buscar órdenes pagadas de la semana actual de múltiples formas:
+        
+        // a) Por paid_at dentro del rango de la semana
+        const { data: paidByPaidAt, error: paidError2 } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("technician_id", technicianId)
+          .eq("status", "paid")
+          .gte("paid_at", startUTC.toISOString())
+          .lte("paid_at", endUTC.toISOString());
+        
+        if (paidError2) {
+          console.error("❌ Error cargando órdenes pagadas (por paid_at):", paidError2);
+        } else if (paidByPaidAt) {
+          paidOrdersList = [...paidOrdersList, ...paidByPaidAt];
+        }
+        
+        // b) Por payout_week/payout_year (para órdenes que ya tienen estos campos)
+        const { data: paidByPayoutWeek, error: paidError3 } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("technician_id", technicianId)
+          .eq("status", "paid")
+          .eq("payout_week", currentPayout.week)
+          .eq("payout_year", currentPayout.year);
+        
+        if (paidError3) {
+          console.error("❌ Error cargando órdenes pagadas (por payout_week):", paidError3);
+        } else if (paidByPayoutWeek) {
+          // Evitar duplicados
+          const existingIds = new Set(paidOrdersList.map(o => o.id));
+          const newPaidOrders = paidByPayoutWeek.filter(o => !existingIds.has(o.id));
+          paidOrdersList = [...paidOrdersList, ...newPaidOrders];
+        }
+        
+        // c) Por created_at dentro del rango si no tienen paid_at (fallback para órdenes antiguas)
+        const { data: paidByCreatedAt, error: paidError4 } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("technician_id", technicianId)
+          .eq("status", "paid")
+          .is("paid_at", null)
+          .gte("created_at", startUTC.toISOString())
+          .lte("created_at", endUTC.toISOString());
+        
+        if (paidError4) {
+          console.error("❌ Error cargando órdenes pagadas (por created_at fallback):", paidError4);
+        } else if (paidByCreatedAt) {
+          // Evitar duplicados
+          const existingIds = new Set(paidOrdersList.map(o => o.id));
+          const newPaidOrders = paidByCreatedAt.filter(o => !existingIds.has(o.id));
+          paidOrdersList = [...paidOrdersList, ...newPaidOrders];
+        }
+      }
+      
+      console.log("✅ Órdenes pagadas encontradas:", paidOrdersList.length);
+      allOrders = [...allOrders, ...paidOrdersList];
+      
+      // 2. Órdenes pendientes (TODAS, sin filtro de fecha para que se vean las nuevas)
+      let pendingQuery = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
-        // Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
-        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
+        .eq("status", "pending");
       
-      // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
       if (lastSettlementDate) {
-        ordersQuery = ordersQuery.or(`and(status.eq.paid,paid_at.gte.${lastSettlementDate.toISOString()}),and(status.ne.paid,created_at.gte.${lastSettlementDate.toISOString()})`);
+        pendingQuery = pendingQuery.gte("created_at", lastSettlementDate.toISOString());
       }
-
-      // Consulta para ajustes de la semana
-      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
-      let adjustmentsQuery = supabase
-        .from("salary_adjustments")
+      
+      const { data: pendingOrders, error: pendingError } = await pendingQuery;
+      if (pendingError) {
+        console.error("❌ Error cargando órdenes pendientes:", pendingError);
+      }
+      if (pendingOrders) {
+        console.log("✅ Órdenes pendientes encontradas:", pendingOrders.length);
+        allOrders = [...allOrders, ...pendingOrders];
+      }
+      
+      // 3. Órdenes devueltas/canceladas de la semana actual
+      let returnedQuery = supabase
+        .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
+        .in("status", ["returned", "cancelled"])
         .gte("created_at", startUTC.toISOString())
         .lte("created_at", endUTC.toISOString());
       
       if (lastSettlementDate) {
+        returnedQuery = returnedQuery.gte("created_at", lastSettlementDate.toISOString());
+      }
+      
+      const { data: returnedOrders, error: returnedError } = await returnedQuery;
+      if (returnedError) {
+        console.error("❌ Error cargando órdenes devueltas:", returnedError);
+      }
+      if (returnedOrders) {
+        console.log("✅ Órdenes devueltas encontradas:", returnedOrders.length);
+        allOrders = [...allOrders, ...returnedOrders];
+      }
+      
+      // Usar las órdenes combinadas y ordenarlas por fecha
+      const orders = allOrders.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA; // Más recientes primero
+      });
+
+      // Consulta para ajustes
+      // Mostrar TODOS los ajustes no liquidadas para que se vean todos los ajustes nuevos
+      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      let adjustmentsQuery = supabase
+        .from("salary_adjustments")
+        .select("*")
+        .eq("technician_id", technicianId);
+      
+      // Si hay liquidación, solo mostrar ajustes creados DESPUÉS de la liquidación
+      // Si NO hay liquidación, mostrar TODOS los ajustes (sin filtro de fecha)
+      if (lastSettlementDate) {
         adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
       }
+      // Si no hay liquidación, no aplicar filtro de fecha para mostrar todos los ajustes
 
       // Consulta para liquidaciones (solo montos)
       const { data: settlementsAmounts } = await supabase
@@ -110,10 +231,25 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
         .eq("technician_id", technicianId)
         .eq("week_start", weekStartISO);
 
-      const [{ data: orders }, { data: adjustmentData }] = await Promise.all([
-        ordersQuery.order("created_at", { ascending: false }),
-        adjustmentsQuery.order("created_at", { ascending: false }),
-      ]);
+      // Consulta para ajustes (ya está definida arriba)
+      const { data: adjustmentData, error: adjustmentsError } = await adjustmentsQuery.order("created_at", { ascending: false });
+
+      // Log para depuración
+      if (adjustmentsError) {
+        console.error("❌ Error cargando ajustes en WeeklyReport:", adjustmentsError);
+      }
+      
+      console.log("📊 WeeklyReport - Datos cargados:", {
+        ordersCount: orders?.length || 0,
+        paidOrdersCount: paidOrdersList?.length || 0,
+        pendingOrdersCount: pendingOrders?.length || 0,
+        returnedOrdersCount: returnedOrders?.length || 0,
+        adjustmentsCount: adjustmentData?.length || 0,
+        hasSettlement: !!lastSettlementDate,
+        technicianId: technicianId,
+        currentPayout: { week: currentPayout.week, year: currentPayout.year },
+        weekRange: { start: startUTC.toISOString(), end: endUTC.toISOString() }
+      });
 
       if (orders) {
         // Excluir órdenes devueltas y canceladas de los cálculos
@@ -250,7 +386,10 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
     setAdjustmentNote("");
     setAdjustmentType("advance");
     setAdjustmentFormOpen(false);
+    setAdjustmentError(null);
+    // Recargar datos y disparar evento para actualizar otros componentes
     void loadData();
+    window.dispatchEvent(new CustomEvent('orderUpdated'));
   }
 
   async function handleDeleteAdjustment(adjustmentId: string) {

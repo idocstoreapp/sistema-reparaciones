@@ -220,6 +220,8 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       }
 
       onSaved();
+      // Disparar evento para actualizar otros componentes (WeeklyReport, WeeklySummary, etc.)
+      window.dispatchEvent(new CustomEvent('orderUpdated'));
       // Reset form
       setOrderDate(today);
       setOrderNumber("");
