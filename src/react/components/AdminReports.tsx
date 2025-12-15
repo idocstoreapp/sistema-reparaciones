@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, formatDate } from "@/lib/date";
+import { currentWeekRange, formatDate, dateStringToUTCStart, dateStringToUTCEnd, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 // Bsale integration removed - now using manual receipt URL
@@ -58,11 +58,9 @@ export default function AdminReports() {
   const calculateSettlementsFromOrders = useCallback(async (startDate: string, endDate: string) => {
     setLoadingSettlements(true);
     try {
-      // Convertir fechas a UTC
-      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
-      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
-      const startUTC = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0, 0));
-      const endUTC = new Date(Date.UTC(endYear, endMonth - 1, endDay, 23, 59, 59, 999));
+      // Usar funciones helper para crear fechas UTC desde strings YYYY-MM-DD
+      const startUTC = dateStringToUTCStart(startDate);
+      const endUTC = dateStringToUTCEnd(endDate);
 
       // Obtener todas las órdenes pagadas en ese rango (igual que en loadWeeklyReport)
       let ordersQuery = supabase
@@ -285,20 +283,20 @@ export default function AdminReports() {
     // Aplicar filtro de fecha según el tipo seleccionado
     if (dateRangeFilter === "week") {
       const { start, end } = currentWeekRange(weekStart);
-      q = q.gte("created_at", start.toISOString())
-           .lte("created_at", end.toISOString());
+      // Convertir a UTC para evitar problemas de zona horaria
+      const startUTC = dateToUTCStart(start);
+      const endUTC = dateToUTCEnd(end);
+      q = q.gte("created_at", startUTC.toISOString())
+           .lte("created_at", endUTC.toISOString());
     } else if (dateRangeFilter === "custom") {
       if (customStartDate) {
-        // Crear fecha en UTC para evitar problemas de zona horaria
-        // El input date viene en formato YYYY-MM-DD, crear en UTC a medianoche
-        const [year, month, day] = customStartDate.split('-').map(Number);
-        const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+        // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+        const start = dateStringToUTCStart(customStartDate);
         q = q.gte("created_at", start.toISOString());
       }
       if (customEndDate) {
-        // Crear fecha en UTC a las 23:59:59.999 del día seleccionado
-        const [year, month, day] = customEndDate.split('-').map(Number);
-        const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+        // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+        const end = dateStringToUTCEnd(customEndDate);
         q = q.lte("created_at", end.toISOString());
       }
     }
@@ -325,17 +323,20 @@ export default function AdminReports() {
         }
         if (dateRangeFilter === "week") {
           const { start, end } = currentWeekRange(weekStart);
-          q2 = q2.gte("created_at", start.toISOString())
-               .lte("created_at", end.toISOString());
+          // Convertir a UTC para evitar problemas de zona horaria
+          const startUTC = dateToUTCStart(start);
+          const endUTC = dateToUTCEnd(end);
+          q2 = q2.gte("created_at", startUTC.toISOString())
+               .lte("created_at", endUTC.toISOString());
         } else if (dateRangeFilter === "custom") {
           if (customStartDate) {
-            const [year, month, day] = customStartDate.split('-').map(Number);
-            const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+            // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+            const start = dateStringToUTCStart(customStartDate);
             q2 = q2.gte("created_at", start.toISOString());
           }
           if (customEndDate) {
-            const [year, month, day] = customEndDate.split('-').map(Number);
-            const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+            // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+            const end = dateStringToUTCEnd(customEndDate);
             q2 = q2.lte("created_at", end.toISOString());
           }
         }

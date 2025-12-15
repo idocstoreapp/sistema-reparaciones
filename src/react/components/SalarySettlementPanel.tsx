@@ -42,6 +42,7 @@ export default function SalarySettlementPanel({
   const [cashAmount, setCashAmount] = useState(0);
   const [transferAmount, setTransferAmount] = useState(0);
   const [customAmountInput, setCustomAmountInput] = useState(0);
+  const [settlementType, setSettlementType] = useState<"total" | "partial">("total");
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
   const [returnsTotal, setReturnsTotal] = useState(0);
@@ -266,9 +267,25 @@ export default function SalarySettlementPanel({
   const netRemaining = Math.max(grossAvailable - (selectedAdjustmentsTotal + deferredHoldback), 0);
 
   useEffect(() => {
-    const defaultAmount = Math.max(minPayable, Math.min(netRemaining, maxPayable));
-    setCustomAmountInput(defaultAmount);
-  }, [minPayable, netRemaining, maxPayable]);
+    if (settlementType === "total") {
+      // Si es ajuste total, establecer automáticamente al monto completo
+      const defaultAmount = Math.max(minPayable, Math.min(netRemaining, maxPayable));
+      setCustomAmountInput(defaultAmount);
+    } else {
+      // Si es ajuste parcial, mantener el monto actual o establecer a 0 si es la primera vez
+      if (customAmountInput === 0 || customAmountInput > netRemaining) {
+        setCustomAmountInput(0);
+      }
+    }
+  }, [minPayable, netRemaining, maxPayable, settlementType]);
+
+  // Calcular saldo restante después del pago
+  const remainingBalance = useMemo(() => {
+    const paidAmount = paymentMethod === "efectivo/transferencia" 
+      ? cashAmount + transferAmount 
+      : customAmountInput;
+    return Math.max(0, netRemaining - paidAmount);
+  }, [netRemaining, customAmountInput, cashAmount, transferAmount, paymentMethod]);
 
   function distributeDeduction(amountToDeduct: number) {
     let remaining = Math.max(0, Math.min(amountToDeduct, totalAdjustable));
@@ -694,9 +711,59 @@ export default function SalarySettlementPanel({
           {context === "admin" ? "Liquidación manual" : "Liquidación de sueldo"}
           {technicianName && <span className="text-xs text-slate-500">• {technicianName}</span>}
         </h5>
-        <p className="text-xs text-slate-500">
-          Ingresa el monto a liquidar. Puedes pagar un monto parcial y el saldo restante quedará pendiente.
+        <p className="text-xs text-slate-500 mb-3">
+          Selecciona el tipo de ajuste y el monto a liquidar.
         </p>
+        
+        {/* Selector de tipo de ajuste */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-slate-700 mb-2 block">Tipo de ajuste:</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSettlementType("total");
+                // Establecer automáticamente al monto completo
+                const defaultAmount = Math.max(minPayable, Math.min(netRemaining, maxPayable));
+                setCustomAmountInput(defaultAmount);
+                if (paymentMethod === "efectivo/transferencia") {
+                  setCashAmount(0);
+                  setTransferAmount(0);
+                }
+              }}
+              className={`px-4 py-2 text-xs font-medium rounded-md border transition ${
+                settlementType === "total"
+                  ? "bg-brand-light text-white border-brand-light"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              Ajuste Total
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSettlementType("partial");
+                // Resetear montos para ajuste parcial
+                setCustomAmountInput(0);
+                setCashAmount(0);
+                setTransferAmount(0);
+              }}
+              className={`px-4 py-2 text-xs font-medium rounded-md border transition ${
+                settlementType === "partial"
+                  ? "bg-brand-light text-white border-brand-light"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              Ajuste Parcial
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            {settlementType === "total" 
+              ? "Se liquidará el monto completo disponible."
+              : "Puedes pagar un monto menor y el saldo restante quedará pendiente."}
+          </p>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <div className="flex flex-col gap-2">
             <label className="text-xs text-slate-500 flex items-center gap-2">
@@ -735,16 +802,30 @@ export default function SalarySettlementPanel({
                     value={customAmountInput}
                     min={0}
                     max={netRemaining}
+                    disabled={settlementType === "total"}
                     onChange={(e) => {
                       const amount = Number(e.target.value) || 0;
-                      setCustomAmountInput(amount);
+                      const clamped = Math.min(amount, netRemaining);
+                      setCustomAmountInput(clamped);
                     }}
                   />
                 </label>
-                {customAmountInput > 0 && customAmountInput < netRemaining && (
-                  <p className="text-xs text-amber-600">
-                    Saldo restante: {formatCLP(netRemaining - customAmountInput)}
-                  </p>
+                {customAmountInput > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-emerald-600 font-medium">
+                      A pagar: {formatCLP(customAmountInput)}
+                    </p>
+                    {remainingBalance > 0 && (
+                      <p className="text-xs text-amber-600 font-semibold">
+                        Saldo restante: {formatCLP(remainingBalance)}
+                      </p>
+                    )}
+                    {remainingBalance === 0 && (
+                      <p className="text-xs text-emerald-600">
+                        ✓ Liquidación completa
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -758,16 +839,30 @@ export default function SalarySettlementPanel({
                     value={customAmountInput}
                     min={0}
                     max={netRemaining}
+                    disabled={settlementType === "total"}
                     onChange={(e) => {
                       const amount = Number(e.target.value) || 0;
-                      setCustomAmountInput(amount);
+                      const clamped = Math.min(amount, netRemaining);
+                      setCustomAmountInput(clamped);
                     }}
                   />
                 </label>
-                {customAmountInput > 0 && customAmountInput < netRemaining && (
-                  <p className="text-xs text-amber-600">
-                    Saldo restante: {formatCLP(netRemaining - customAmountInput)}
-                  </p>
+                {customAmountInput > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-emerald-600 font-medium">
+                      A pagar: {formatCLP(customAmountInput)}
+                    </p>
+                    {remainingBalance > 0 && (
+                      <p className="text-xs text-amber-600 font-semibold">
+                        Saldo restante: {formatCLP(remainingBalance)}
+                      </p>
+                    )}
+                    {remainingBalance === 0 && (
+                      <p className="text-xs text-emerald-600">
+                        ✓ Liquidación completa
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -816,10 +911,17 @@ export default function SalarySettlementPanel({
                   />
                 </label>
                 <div className="text-xs text-slate-600 pb-1 flex flex-col">
-                  <span className="font-semibold">Total: {formatCLP(cashAmount + transferAmount)}</span>
-                  {cashAmount + transferAmount < netRemaining && (
-                    <span className="text-amber-600 mt-1">
-                      Restante: {formatCLP(netRemaining - (cashAmount + transferAmount))}
+                  <span className="font-semibold text-emerald-600">
+                    A pagar: {formatCLP(cashAmount + transferAmount)}
+                  </span>
+                  {remainingBalance > 0 && (
+                    <span className="text-amber-600 font-semibold mt-1">
+                      Saldo restante: {formatCLP(remainingBalance)}
+                    </span>
+                  )}
+                  {remainingBalance === 0 && cashAmount + transferAmount > 0 && (
+                    <span className="text-emerald-600 mt-1">
+                      ✓ Liquidación completa
                     </span>
                   )}
                 </div>
@@ -830,6 +932,38 @@ export default function SalarySettlementPanel({
       </div>
 
       {settlementInfo}
+
+      {/* Mostrar resumen del pago y saldo restante */}
+      {((paymentMethod === "efectivo" && customAmountInput > 0) ||
+        (paymentMethod === "transferencia" && customAmountInput > 0) ||
+        (paymentMethod === "efectivo/transferencia" && (cashAmount + transferAmount) > 0)) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-semibold text-slate-700">Resumen del pago:</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-slate-500">Monto a pagar:</p>
+              <p className="text-lg font-semibold text-emerald-600">
+                {formatCLP(paymentMethod === "efectivo/transferencia" ? cashAmount + transferAmount : customAmountInput)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Saldo restante:</p>
+              <p className={`text-lg font-semibold ${remainingBalance > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                {formatCLP(remainingBalance)}
+              </p>
+            </div>
+          </div>
+          {remainingBalance > 0 && (
+            <div className="mt-2 pt-2 border-t border-blue-200">
+              <p className="text-xs text-amber-700">
+                ⚠️ El saldo restante de {formatCLP(remainingBalance)} quedará pendiente para la próxima liquidación.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {noAdjustments ? (
         <div className="text-sm text-slate-500 bg-white border border-dashed border-slate-300 rounded-md p-4">

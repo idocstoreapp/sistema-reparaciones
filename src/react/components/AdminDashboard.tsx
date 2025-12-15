@@ -30,6 +30,10 @@ export default function AdminDashboard() {
       const { start: monthStart, end: monthEnd } = currentMonthRange();
       const { start: weekStart, end: weekEnd } = currentWeekRange();
 
+      // Convertir fechas a UTC para evitar problemas de zona horaria
+      const monthStartUTC = dateToUTCStart(monthStart);
+      const monthEndUTC = dateToUTCEnd(monthEnd);
+
       // ⚠️ CAMBIO CRÍTICO: Para el mes, usar paid_at para órdenes pagadas (retrocompatibilidad)
       // Las órdenes pendientes se filtran por created_at ya que aún no tienen paid_at
       const currentPayout = getCurrentPayoutWeek();
@@ -38,7 +42,7 @@ export default function AdminDashboard() {
       const { data: allOrders } = await supabase
         .from("orders")
         .select("*")
-        .or(`and(status.eq.paid,paid_at.gte.${monthStart.toISOString()},paid_at.lte.${monthEnd.toISOString()}),and(status.eq.pending,created_at.gte.${monthStart.toISOString()},created_at.lte.${monthEnd.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${monthStart.toISOString()},created_at.lte.${monthEnd.toISOString()})`);
+        .or(`and(status.eq.paid,paid_at.gte.${monthStartUTC.toISOString()},paid_at.lte.${monthEndUTC.toISOString()}),and(status.eq.pending,created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()})`);
 
       if (allOrders) {
         // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas

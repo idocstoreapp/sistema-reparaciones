@@ -11,9 +11,10 @@ import SalarySettlementPanel from "./SalarySettlementPanel";
 interface WeeklyReportProps {
   technicianId: string;
   refreshKey?: number;
+  userRole?: string; // Opcional: rol del usuario para restringir funcionalidades
 }
 
-export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyReportProps) {
+export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }: WeeklyReportProps) {
   const [totalEarned, setTotalEarned] = useState(0);
   const [totalPending, setTotalPending] = useState(0);
   const [lastPayment, setLastPayment] = useState<string | null>(null);
@@ -53,6 +54,10 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
       const { start, end } = currentWeekRange();
       const weekStartISO = start.toISOString().slice(0, 10);
       
+      // Convertir fechas a UTC para evitar problemas de zona horaria
+      const startUTC = dateToUTCStart(start);
+      const endUTC = dateToUTCEnd(end);
+      
       // ⚠️ CAMBIO CRÍTICO: Usar payout_week y payout_year en lugar de created_at
       // Las órdenes se asignan a una semana según cuando fueron pagadas, no cuando fueron creadas
       const currentPayout = getCurrentPayoutWeek();
@@ -78,7 +83,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         .select("*")
         .eq("technician_id", technicianId)
         // Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
-        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${start.toISOString()},created_at.lte.${end.toISOString()})`);
+        .or(`and(status.eq.paid,payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(status.eq.pending,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
       
       // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
       if (lastSettlementDate) {
@@ -91,8 +96,8 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
         .from("salary_adjustments")
         .select("*")
         .eq("technician_id", technicianId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+        .gte("created_at", startUTC.toISOString())
+        .lte("created_at", endUTC.toISOString());
       
       if (lastSettlementDate) {
         adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
@@ -311,13 +316,16 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
     setActionError(null);
     setSettlingReturns(true);
     const { start, end } = currentWeekRange();
+    // Convertir fechas a UTC para evitar problemas de zona horaria
+    const startUTC = dateToUTCStart(start);
+    const endUTC = dateToUTCEnd(end);
     const { error } = await supabase
       .from("orders")
       .delete()
       .eq("technician_id", technicianId)
       .in("status", ["returned", "cancelled"])
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString());
+      .gte("created_at", startUTC.toISOString())
+      .lte("created_at", endUTC.toISOString());
     setSettlingReturns(false);
     if (error) {
       console.error("Error al eliminar devoluciones:", error);
@@ -358,13 +366,22 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           <span className="text-slate-600">Liquidado esta semana:</span>
           <span className="font-semibold text-sky-600">{formatCLP(settledAmount)}</span>
         </div>
-            <SalarySettlementPanel
-              technicianId={technicianId}
-              baseAmount={baseAmountForSettlement}
-              adjustmentTotal={totalAdjustments}
-              context="technician"
-              onAfterSettlement={() => void loadData()}
-            />
+        {netAfterSettlements > 0 && (
+          <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-2">
+            <span className="text-slate-700 font-medium text-sm">Saldo restante pendiente:</span>
+            <span className="font-semibold text-amber-700">{formatCLP(netAfterSettlements)}</span>
+          </div>
+        )}
+        {/* Solo mostrar panel de liquidación si NO es técnico */}
+        {userRole !== "technician" && (
+          <SalarySettlementPanel
+            technicianId={technicianId}
+            baseAmount={baseAmountForSettlement}
+            adjustmentTotal={totalAdjustments}
+            context="technician"
+            onAfterSettlement={() => void loadData()}
+          />
+        )}
         
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Total pendiente:</span>
@@ -436,7 +453,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 self-start sm:self-auto">
-            {returnedOrders.length > 0 && (
+            {returnedOrders.length > 0 && userRole !== "technician" && (
               <button
                 type="button"
                 onClick={handleSettleAllReturns}
@@ -446,13 +463,17 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                 {settlingReturns ? "Eliminando devoluciones..." : "Eliminar devoluciones"}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setSettlementPanelOpen((prev) => !prev)}
-              className="px-3 py-2 text-xs font-medium border border-brand-light text-brand rounded-md hover:bg-brand/5 transition"
-            >
-              {settlementPanelOpen ? "Ocultar liquidación" : "Liquidar sueldo"}
-            </button>
+            {/* Solo mostrar botón de liquidar sueldo si NO es técnico */}
+            {userRole !== "technician" && (
+              <button
+                type="button"
+                onClick={() => setSettlementPanelOpen((prev) => !prev)}
+                className="px-3 py-2 text-xs font-medium border border-brand-light text-brand rounded-md hover:bg-brand/5 transition"
+              >
+                {settlementPanelOpen ? "Ocultar liquidación" : "Liquidar sueldo"}
+              </button>
+            )}
+            {/* Botón de registrar ajuste visible para todos (incluyendo técnicos) */}
             <button
               type="button"
               onClick={() => {
@@ -466,7 +487,8 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           </div>
         </div>
 
-        {settlementPanelOpen && (
+        {/* Solo mostrar panel de liquidación si NO es técnico */}
+        {userRole !== "technician" && settlementPanelOpen && (
           <div className="mb-5">
             <SalarySettlementPanel
               technicianId={technicianId}
@@ -478,7 +500,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
           </div>
         )}
 
-        {/* Modal de Ajustes de Sueldo para Móvil */}
+        {/* Modal de Ajustes de Sueldo para Móvil - Visible para todos */}
         {adjustmentFormOpen && (
           <div className="lg:hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
             setAdjustmentFormOpen(false);
@@ -650,7 +672,11 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
             <div className="space-y-2">
               {/* Mostrar devoluciones/cancelaciones primero */}
               {returnedOrders.map((order) => {
-                const dateTime = new Date(order.created_at).toLocaleString("es-CL", {
+                // Usar returned_at o cancelled_at si existe, sino usar created_at como fallback
+                const statusDate = order.status === "returned" 
+                  ? (order.returned_at || order.created_at)
+                  : (order.cancelled_at || order.created_at);
+                const dateTime = new Date(statusDate).toLocaleString("es-CL", {
                   dateStyle: "short",
                   timeStyle: "short",
                 });
@@ -670,14 +696,17 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                       <span className="font-semibold text-red-600">
                         -{formatCLP(order.commission_amount ?? 0)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReturn(order.id)}
-                        disabled={deletingReturnId === order.id || settlingReturns}
-                        className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
-                      >
-                        {deletingReturnId === order.id ? "Eliminando..." : "Eliminar"}
-                      </button>
+                      {/* Solo mostrar botón eliminar si NO es técnico */}
+                      {userRole !== "technician" && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReturn(order.id)}
+                          disabled={deletingReturnId === order.id || settlingReturns}
+                          className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
+                        >
+                          {deletingReturnId === order.id ? "Eliminando..." : "Eliminar"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -706,6 +735,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0 }: WeeklyRep
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-semibold">{formatCLP(adj.amount)}</span>
+                      {/* Botón eliminar visible para todos (los técnicos pueden eliminar sus propios ajustes) */}
                       <button
                         type="button"
                         onClick={() => handleDeleteAdjustment(adj.id)}

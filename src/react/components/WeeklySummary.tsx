@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, currentMonthRange } from "@/lib/date";
+import { currentWeekRange, currentMonthRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import KpiCard from "./KpiCard";
@@ -33,6 +33,12 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       const { start, end } = currentWeekRange();
       const { start: ms, end: me } = currentMonthRange();
       const weekStartISO = start.toISOString().slice(0, 10);
+      
+      // Convertir fechas a UTC para evitar problemas de zona horaria
+      const startUTC = dateToUTCStart(start);
+      const endUTC = dateToUTCEnd(end);
+      const msUTC = dateToUTCStart(ms);
+      const meUTC = dateToUTCEnd(me);
 
       // Consultar si hay liquidaciones registradas para esta semana
       // Si hay liquidación, solo contar órdenes creadas DESPUÉS de la liquidación más reciente
@@ -73,8 +79,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .select("*")
         .eq("technician_id", technicianId)
         .eq("status", "paid")
-        .gte("paid_at", ms.toISOString())
-        .lte("paid_at", me.toISOString());
+        .gte("paid_at", msUTC.toISOString())
+        .lte("paid_at", meUTC.toISOString());
 
       // Consulta para total histórico de devoluciones/cancelaciones (sin límite de tiempo)
       const { data: totalReturns, error: totalReturnsError } = await supabase
@@ -96,8 +102,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         .from("salary_adjustments")
         .select("amount")
         .eq("technician_id", technicianId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+        .gte("created_at", startUTC.toISOString())
+        .lte("created_at", endUTC.toISOString());
       
       // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
       if (lastSettlementDate) {

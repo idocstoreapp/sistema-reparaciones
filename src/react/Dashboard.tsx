@@ -127,7 +127,7 @@ function TechnicalView({ me }: { me: Profile }) {
           technicianId={me.id}
           onSaved={() => setRefreshKey((x) => x + 1)}
         />
-        <WeeklyReport technicianId={me.id} refreshKey={refreshKey} />
+        <WeeklyReport technicianId={me.id} refreshKey={refreshKey} userRole={me.role} />
       </div>
 
       <OrdersTable 

@@ -32,6 +32,9 @@ export interface Order {
   paid_at?: string | null; // Fecha en que la orden fue pagada
   payout_week?: number | null; // Número de semana (1-53) en que fue pagada
   payout_year?: number | null; // Año en que fue pagada
+  // Campos de fecha de devolución/cancelación
+  returned_at?: string | null; // Fecha y hora exacta en que la orden fue marcada como devuelta
+  cancelled_at?: string | null; // Fecha y hora exacta en que la orden fue marcada como cancelada
   // Campos legacy (mantenidos para retrocompatibilidad, basados en created_at)
   week_start?: string | null;
   month?: number | null;

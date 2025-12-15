@@ -1244,7 +1244,11 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                   ) : (
                     <div className="space-y-2">
                       {cardReturns.map((order) => {
-                        const dateTime = new Date(order.created_at).toLocaleString("es-CL", {
+                        // Usar returned_at o cancelled_at si existe, sino usar created_at como fallback
+                        const statusDate = order.status === "returned" 
+                          ? (order.returned_at || order.created_at)
+                          : (order.cancelled_at || order.created_at);
+                        const dateTime = new Date(statusDate).toLocaleString("es-CL", {
                           dateStyle: "short",
                           timeStyle: "short",
                         });

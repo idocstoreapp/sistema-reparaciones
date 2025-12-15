@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { calcCommission } from "@/lib/commission";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
+import { processReceiptInput, isUrl } from "@/lib/receipt";
 // Bsale integration removed - now using manual receipt URL
 import type { PaymentMethod } from "@/lib/commission";
 import type { Supplier } from "@/types";
@@ -179,6 +180,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         repair_cost: precioTotal, // Precio total cobrado
         payment_method: paymentMethod || '', // Usar '' en lugar de null (NOT NULL constraint)
         receipt_number: receiptNumber.trim() || null, // Opcional - puede ser null
+        receipt_url: receiptUrl.trim() || null, // URL del recibo (opcional)
         status,
         commission_amount: commission, // Si no hay medio de pago, será 0
         created_at: createdAt.toISOString(),
@@ -421,31 +423,79 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">N° Recibo/Boleta (Opcional)</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            N° Recibo/Boleta (Opcional)
+          </label>
           <input
             className="w-full border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Ej: 12345"
+            placeholder="Ej: 12345 o pega el enlace de Bsale"
             value={receiptNumber}
-            onChange={(e) => setReceiptNumber(e.target.value)}
+            onPaste={(e) => {
+              // Detectar cuando se pega contenido
+              // Intentar obtener la URL del enlace primero (si es un hipervínculo)
+              let pastedText = e.clipboardData.getData('text/plain');
+              const pastedHtml = e.clipboardData.getData('text/html');
+              
+              // Si hay HTML, intentar extraer la URL del enlace
+              if (pastedHtml && pastedHtml.includes('<a')) {
+                const urlMatch = pastedHtml.match(/href=["']([^"']+)["']/i);
+                if (urlMatch && urlMatch[1]) {
+                  pastedText = urlMatch[1]; // Usar la URL del enlace
+                }
+              }
+              
+              if (pastedText) {
+                const processed = processReceiptInput(pastedText);
+                setReceiptNumber(processed.receiptNumber);
+                setReceiptUrl(processed.receiptUrl);
+                // Prevenir el comportamiento por defecto para manejar el paste manualmente
+                e.preventDefault();
+              }
+            }}
+            onChange={(e) => {
+              const value = e.target.value;
+              setReceiptNumber(value);
+              
+              // Si el usuario está escribiendo una URL, detectarla automáticamente
+              if (isUrl(value)) {
+                const processed = processReceiptInput(value);
+                setReceiptNumber(processed.receiptNumber);
+                setReceiptUrl(processed.receiptUrl);
+              } else if (!receiptUrl) {
+                // Si no es URL y no hay URL guardada, limpiar la URL
+                setReceiptUrl('');
+              }
+            }}
           />
           <p className="text-xs text-slate-500 mt-1">
-            Puedes guardar la orden sin recibo. La orden quedará como pendiente hasta que agregues el número de boleta
+            Puedes pegar el enlace completo de Bsale y el sistema detectará automáticamente el número de recibo.
+            {receiptUrl && (
+              <span className="block mt-1 text-emerald-600">
+                ✓ URL detectada: El número se mostrará como enlace clicable
+              </span>
+            )}
           </p>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Link del Recibo (Opcional)</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            type="url"
-            placeholder="https://..."
-            value={receiptUrl}
-            onChange={(e) => setReceiptUrl(e.target.value)}
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            URL del recibo/boleta. Se mostrará como enlace al hacer clic en el número de recibo
-          </p>
-        </div>
+        {/* Campo de URL oculto o visible solo para edición manual */}
+        {receiptUrl && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Link del Recibo (detectado automáticamente)
+            </label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-50"
+              type="url"
+              placeholder="https://..."
+              value={receiptUrl}
+              onChange={(e) => setReceiptUrl(e.target.value)}
+              readOnly={false}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Puedes editar la URL si es necesario
+            </p>
+          </div>
+        )}
 
         <div className="col-span-2">
           <label className="block text-sm font-medium text-slate-700 mb-1">Notas (opcional)</label>

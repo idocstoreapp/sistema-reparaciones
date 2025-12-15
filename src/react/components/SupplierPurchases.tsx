@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatDate, currentWeekRange } from "@/lib/date";
+import { formatDate, currentWeekRange, dateStringToUTCStart, dateStringToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import type { Order, Supplier } from "@/types";
 
@@ -74,15 +74,20 @@ export default function SupplierPurchases() {
         setLoading(false);
         return;
       }
-      dateStart = new Date(startDate);
-      dateStart.setHours(0, 0, 0, 0);
-      dateEnd = new Date(endDate);
-      dateEnd.setHours(23, 59, 59, 999);
+      // Usar funciones helper para crear fechas UTC desde strings YYYY-MM-DD
+      dateStart = dateStringToUTCStart(startDate);
+      dateEnd = dateStringToUTCEnd(endDate);
     } else {
       // week (por defecto)
-      dateStart = new Date();
-      dateStart.setDate(dateStart.getDate() - 7);
-      dateStart.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setDate(today.getDate() - 7);
+      // Convertir a UTC para evitar problemas de zona horaria
+      dateStart = new Date(Date.UTC(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        0, 0, 0, 0
+      ));
     }
 
     // Construir query

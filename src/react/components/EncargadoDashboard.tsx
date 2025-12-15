@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange } from "@/lib/date";
+import { currentWeekRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, Branch } from "@/types";
 import SmallExpenses from "./SmallExpenses";
@@ -277,6 +277,9 @@ function OrdersTableForBranch({ branchId, refreshKey }: { branchId: string; refr
   // Calcular filtro de semana de pago (sábado a viernes)
   const currentPayout = getCurrentPayoutWeek();
   const { start, end } = currentWeekRange();
+  // Convertir fechas a UTC para evitar problemas de zona horaria
+  const weekStartUTC = dateToUTCStart(start);
+  const weekEndUTC = dateToUTCEnd(end);
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -294,8 +297,8 @@ function OrdersTableForBranch({ branchId, refreshKey }: { branchId: string; refr
         weekFilter={{
           payoutWeek: currentPayout.week,
           payoutYear: currentPayout.year,
-          weekStart: start,
-          weekEnd: end
+          weekStart: weekStartUTC,
+          weekEnd: weekEndUTC
         }}
       />
     </div>

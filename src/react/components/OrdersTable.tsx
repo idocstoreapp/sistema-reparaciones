@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatDate, currentWeekRange } from "@/lib/date";
+import { formatDate, currentWeekRange, dateStringToUTCStart, dateStringToUTCEnd, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
+import { processReceiptInput, isUrl } from "@/lib/receipt";
 import { formatCLP } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
@@ -119,11 +120,14 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     // Aplicar filtro de semana de pago si se proporciona
     if (weekFilter) {
+      // Convertir fechas a UTC para evitar problemas de zona horaria
+      const weekStartUTC = dateToUTCStart(weekFilter.weekStart);
+      const weekEndUTC = dateToUTCEnd(weekFilter.weekEnd);
       // Para órdenes pagadas: filtrar por payout_week y payout_year
       // Para órdenes pendientes: filtrar por created_at dentro del rango de la semana
       q = q.or(
         `and(status.eq.paid,payout_week.eq.${weekFilter.payoutWeek},payout_year.eq.${weekFilter.payoutYear}),` +
-        `and(status.eq.pending,created_at.gte.${weekFilter.weekStart.toISOString()},created_at.lte.${weekFilter.weekEnd.toISOString()})`
+        `and(status.eq.pending,created_at.gte.${weekStartUTC.toISOString()},created_at.lte.${weekEndUTC.toISOString()})`
       );
     }
 
@@ -320,25 +324,24 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     if (periodFilter === "current_week") {
       const { start, end } = currentWeekRange();
-      rangeStart = new Date(start);
-      rangeStart.setHours(0, 0, 0, 0);
-      rangeEnd = new Date(end);
-      rangeEnd.setHours(23, 59, 59, 999);
+      // Convertir a UTC para evitar problemas de zona horaria
+      rangeStart = dateToUTCStart(start);
+      rangeEnd = dateToUTCEnd(end);
     } else if (periodFilter === "range") {
       if (customRange.start) {
-        rangeStart = new Date(customRange.start);
-        rangeStart.setHours(0, 0, 0, 0);
+        // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+        rangeStart = dateStringToUTCStart(customRange.start);
       }
       if (customRange.end) {
-        rangeEnd = new Date(customRange.end);
-        rangeEnd.setHours(23, 59, 59, 999);
+        // Usar función helper para crear fecha UTC desde string YYYY-MM-DD
+        rangeEnd = dateStringToUTCEnd(customRange.end);
       } else if (rangeStart) {
-        rangeEnd = new Date(rangeStart);
-        rangeEnd.setHours(23, 59, 59, 999);
+        // Si solo hay start, usar el mismo día como end
+        rangeEnd = dateStringToUTCEnd(customRange.start);
       }
       if (!rangeStart && customRange.end) {
-        rangeStart = new Date(customRange.end);
-        rangeStart.setHours(0, 0, 0, 0);
+        // Si solo hay end, usar el mismo día como start
+        rangeStart = dateStringToUTCStart(customRange.end);
       }
     }
 
@@ -761,9 +764,30 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     setUpdatingStatusId(orderId);
 
     try {
+      // Obtener la fecha/hora exacta de cuando se marca como devuelta/cancelada
+      const now = new Date().toISOString();
+      
+      // Preparar los datos de actualización
+      const updateData: {
+        status: string;
+        returned_at?: string | null;
+        cancelled_at?: string | null;
+      } = {
+        status: newStatus,
+      };
+
+      // Si se marca como devuelta, guardar la fecha/hora exacta
+      if (newStatus === "returned") {
+        updateData.returned_at = now;
+        updateData.cancelled_at = null; // Limpiar cancelled_at si existía
+      } else if (newStatus === "cancelled") {
+        updateData.cancelled_at = now;
+        updateData.returned_at = null; // Limpiar returned_at si existía
+      }
+
       const { error } = await supabase
         .from("orders")
-        .update({ status: newStatus })
+        .update(updateData)
         .eq("id", orderId);
 
       if (error) {
@@ -1654,21 +1678,65 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     type="text"
                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
                     value={editReceipt}
-                    onChange={(e) => setEditReceipt(e.target.value)}
-                    placeholder="Ingresa el número de boleta"
+                    onPaste={(e) => {
+                      // Detectar cuando se pega contenido
+                      // Intentar obtener la URL del enlace primero (si es un hipervínculo)
+                      let pastedText = e.clipboardData.getData('text/plain');
+                      const pastedHtml = e.clipboardData.getData('text/html');
+                      
+                      // Si hay HTML, intentar extraer la URL del enlace
+                      if (pastedHtml && pastedHtml.includes('<a')) {
+                        const urlMatch = pastedHtml.match(/href=["']([^"']+)["']/i);
+                        if (urlMatch && urlMatch[1]) {
+                          pastedText = urlMatch[1]; // Usar la URL del enlace
+                        }
+                      }
+                      
+                      if (pastedText) {
+                        const processed = processReceiptInput(pastedText);
+                        setEditReceipt(processed.receiptNumber);
+                        setEditReceiptUrl(processed.receiptUrl);
+                        e.preventDefault();
+                      }
+                    }}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEditReceipt(value);
+                      
+                      // Si el usuario está escribiendo una URL, detectarla automáticamente
+                      if (isUrl(value)) {
+                        const processed = processReceiptInput(value);
+                        setEditReceipt(processed.receiptNumber);
+                        setEditReceiptUrl(processed.receiptUrl);
+                      } else if (!editReceiptUrl) {
+                        // Si no es URL y no hay URL guardada, limpiar la URL
+                        setEditReceiptUrl('');
+                      }
+                    }}
+                    placeholder="Ingresa el número o pega el enlace de Bsale"
                     autoFocus
                   />
+                  {editReceiptUrl && (
+                    <p className="text-xs text-emerald-600 mt-1">
+                      ✓ URL detectada: El número se mostrará como enlace clicable
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Link del recibo (opcional)</label>
-                  <input
-                    type="url"
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light"
-                    value={editReceiptUrl}
-                    onChange={(e) => setEditReceiptUrl(e.target.value)}
-                    placeholder="https://..."
-                  />
-                </div>
+                {editReceiptUrl && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Link del recibo (detectado automáticamente)</label>
+                    <input
+                      type="url"
+                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-light bg-slate-50"
+                      value={editReceiptUrl}
+                      onChange={(e) => setEditReceiptUrl(e.target.value)}
+                      placeholder="https://..."
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Puedes editar la URL si es necesario
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Medio de pago</label>
