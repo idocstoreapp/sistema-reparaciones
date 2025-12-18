@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentMonthRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
+import { currentMonthRange, currentWeekRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
@@ -49,49 +49,82 @@ export default function AdminDashboard() {
           console.error("Error cargando órdenes pagadas:", paidError);
         }
 
-        // Cargar TODAS las órdenes pendientes (sin límite de fecha)
-        // El KPI "Pagos Pendientes a Técnicos" debe mostrar todas las órdenes pendientes
-        const { data: pendingOrders, error: pendingError } = await supabase
-          .from("orders")
-          .select("*")
-          .eq("status", "pending");
-
-        if (pendingError) {
-          console.error("Error cargando órdenes pendientes:", pendingError);
-        }
-
         // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas
         const monthGain = (paidOrders || []).reduce(
           (s, r) => s + (r.commission_amount ?? 0),
           0
         );
 
-        // Pendientes: recalcular comisión basándose en el medio de pago actual
-        // (puede que hayan agregado el medio de pago después de crear la orden)
-        const pendingAll = (pendingOrders || [])
-          .reduce((s, r) => {
-            // Si la orden tiene medio de pago, recalcular la comisión
-            // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
-            const paymentMethod = (r.payment_method as PaymentMethod) || "";
-            if (paymentMethod) {
-              const recalculatedCommission = calcCommission({
-                paymentMethod,
-                costoRepuesto: r.replacement_cost ?? 0,
-                precioTotal: r.repair_cost ?? 0,
-              });
-              return s + recalculatedCommission;
-            }
-            // Si no hay medio de pago, usar la comisión almacenada
-            return s + (r.commission_amount ?? 0);
-          }, 0);
+        // ⚠️ CAMBIO CRÍTICO: "Pagos Pendientes a Técnicos" debe calcular:
+        // - Todas las órdenes pagadas (con recibo) de la semana actual
+        // - Que NO han sido liquidadas (excluir órdenes con salary_settlements)
+        // - Sumar las comisiones de TODOS los técnicos
+        
+        const { start: weekStart, end: weekEnd } = currentWeekRange();
+        const weekStartISO = weekStart.toISOString().slice(0, 10);
+        
+        // Obtener todos los técnicos
+        const { data: technicians, error: techError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("role", "technician");
+
+        if (techError) {
+          console.error("Error cargando técnicos:", techError);
+        }
+
+        let pendingAll = 0;
+        const technicianIds = technicians?.map(t => t.id) || [];
+
+        // Para cada técnico, calcular comisiones pendientes de la semana actual
+        if (technicianIds.length > 0) {
+          await Promise.all(
+            technicianIds.map(async (techId) => {
+              // Consultar liquidaciones para este técnico en esta semana
+              const { data: settlementsData } = await supabase
+                .from("salary_settlements")
+                .select("created_at")
+                .eq("technician_id", techId)
+                .eq("week_start", weekStartISO)
+                .order("created_at", { ascending: false });
+
+              const lastSettlementDate = settlementsData && settlementsData.length > 0
+                ? new Date(settlementsData[0].created_at)
+                : null;
+
+              // Obtener órdenes pagadas de la semana actual (con recibo) que no han sido liquidadas
+              let ordersQuery = supabase
+                .from("orders")
+                .select("commission_amount, paid_at")
+                .eq("technician_id", techId)
+                .eq("status", "paid")
+                .not("receipt_number", "is", null) // Solo órdenes con recibo
+                .eq("payout_week", currentPayout.week)
+                .eq("payout_year", currentPayout.year);
+
+              // Si hay liquidación, excluir órdenes pagadas antes de la liquidación
+              if (lastSettlementDate) {
+                ordersQuery = ordersQuery.gte("paid_at", lastSettlementDate.toISOString());
+              }
+
+              const { data: unpaidOrders, error: unpaidError } = await ordersQuery;
+
+              if (unpaidError) {
+                console.error(`Error cargando órdenes no liquidadas para técnico ${techId}:`, unpaidError);
+              } else if (unpaidOrders) {
+                const techTotal = unpaidOrders.reduce(
+                  (sum, o) => sum + (o.commission_amount ?? 0),
+                  0
+                );
+                pendingAll += techTotal;
+              }
+            })
+          );
+        }
 
         // Log para depuración
-        if (pendingOrders && pendingOrders.length > 0) {
-          const ordersWithPayment = pendingOrders.filter(o => o.payment_method).length;
-          const ordersWithoutPayment = pendingOrders.length - ordersWithPayment;
-          console.log(`📊 AdminDashboard - Órdenes pendientes: ${pendingOrders.length} total (${ordersWithPayment} con pago, ${ordersWithoutPayment} sin pago)`);
-          console.log(`💰 AdminDashboard - Total pagos pendientes calculado: ${formatCLP(pendingAll)}`);
-        }
+        console.log(`📊 AdminDashboard - Técnicos consultados: ${technicianIds.length}`);
+        console.log(`💰 AdminDashboard - Total pagos pendientes (órdenes pagadas no liquidadas): ${formatCLP(pendingAll)}`);
 
         // Compras de la semana actual (pagadas, con proveedor)
         // ⚠️ CAMBIO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
