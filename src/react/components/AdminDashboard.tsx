@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentMonthRange, currentWeekRange } from "@/lib/date";
+import { currentMonthRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { calcCommission } from "@/lib/commission";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
@@ -27,34 +27,49 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { start: monthStart, end: monthEnd } = currentMonthRange();
-      const { start: weekStart, end: weekEnd } = currentWeekRange();
+      try {
+        const { start: monthStart, end: monthEnd } = currentMonthRange();
 
-      // Convertir fechas a UTC para evitar problemas de zona horaria
-      const monthStartUTC = dateToUTCStart(monthStart);
-      const monthEndUTC = dateToUTCEnd(monthEnd);
+        // Convertir fechas a UTC para evitar problemas de zona horaria
+        const monthStartUTC = dateToUTCStart(monthStart);
+        const monthEndUTC = dateToUTCEnd(monthEnd);
 
-      // ⚠️ CAMBIO CRÍTICO: Para el mes, usar paid_at para órdenes pagadas (retrocompatibilidad)
-      // Las órdenes pendientes se filtran por created_at ya que aún no tienen paid_at
-      const currentPayout = getCurrentPayoutWeek();
-      
-      // Cargar órdenes del mes: pagadas por paid_at, pendientes por created_at
-      const { data: allOrders } = await supabase
-        .from("orders")
-        .select("*")
-        .or(`and(status.eq.paid,paid_at.gte.${monthStartUTC.toISOString()},paid_at.lte.${monthEndUTC.toISOString()}),and(status.eq.pending,created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()}),and(status.in.(returned,cancelled),created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()})`);
+        // ⚠️ CAMBIO CRÍTICO: Para el mes, usar paid_at para órdenes pagadas (retrocompatibilidad)
+        // Las órdenes pendientes se filtran por created_at ya que aún no tienen paid_at
+        const currentPayout = getCurrentPayoutWeek();
+        
+        // Cargar órdenes pagadas del mes (por paid_at)
+        const { data: paidOrders, error: paidError } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("status", "paid")
+          .or(`and(paid_at.gte.${monthStartUTC.toISOString()},paid_at.lte.${monthEndUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()})`);
 
-      if (allOrders) {
+        if (paidError) {
+          console.error("Error cargando órdenes pagadas:", paidError);
+        }
+
+        // Cargar órdenes pendientes del mes (por created_at)
+        const { data: pendingOrders, error: pendingError } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("status", "pending")
+          .gte("created_at", monthStartUTC.toISOString())
+          .lte("created_at", monthEndUTC.toISOString());
+
+        if (pendingError) {
+          console.error("Error cargando órdenes pendientes:", pendingError);
+        }
+
         // Solo contar órdenes pagadas (con recibo) en las ganancias, excluyendo devueltas y canceladas
-        const paidOrders = allOrders.filter((r) => r.status === "paid");
-        const monthGain = paidOrders.reduce(
+        const monthGain = (paidOrders || []).reduce(
           (s, r) => s + (r.commission_amount ?? 0),
           0
         );
+
         // Pendientes: recalcular comisión basándose en el medio de pago actual
         // (puede que hayan agregado el medio de pago después de crear la orden)
-        const pendingAll = allOrders
-          .filter((r) => r.status === "pending")
+        const pendingAll = (pendingOrders || [])
           .reduce((s, r) => {
             // Si la orden tiene medio de pago, recalcular la comisión
             // Si no tiene medio de pago, usar la comisión almacenada (probablemente 0)
@@ -70,9 +85,10 @@ export default function AdminDashboard() {
             // Si no hay medio de pago, usar la comisión almacenada
             return s + (r.commission_amount ?? 0);
           }, 0);
+
         // Compras de la semana actual (pagadas, con proveedor)
         // ⚠️ CAMBIO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
-        const purchases = paidOrders
+        const purchases = (paidOrders || [])
           .filter(
             (r) =>
               (r.replacement_cost ?? 0) > 0 &&
@@ -82,14 +98,29 @@ export default function AdminDashboard() {
           )
           .reduce((s, r) => s + (r.replacement_cost ?? 0), 0);
 
+        // Contar órdenes en garantía (returned o cancelled)
+        const { data: warrantyOrdersData, error: warrantyError } = await supabase
+          .from("orders")
+          .select("id")
+          .in("status", ["returned", "cancelled"]);
+
+        if (warrantyError) {
+          console.error("Error cargando órdenes en garantía:", warrantyError);
+        }
+
+        const warrantyOrders = warrantyOrdersData?.length || 0;
+
         setKpis({
           monthGain,
           pendingAll,
           purchases,
-          warrantyOrders: 0, // TODO: implementar campo de garantía
+          warrantyOrders,
         });
+      } catch (error) {
+        console.error("Error general cargando KPIs:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [refreshKey]);
