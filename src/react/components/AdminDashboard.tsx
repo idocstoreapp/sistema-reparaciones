@@ -49,13 +49,12 @@ export default function AdminDashboard() {
           console.error("Error cargando órdenes pagadas:", paidError);
         }
 
-        // Cargar órdenes pendientes del mes (por created_at)
+        // Cargar TODAS las órdenes pendientes (sin límite de fecha)
+        // El KPI "Pagos Pendientes a Técnicos" debe mostrar todas las órdenes pendientes
         const { data: pendingOrders, error: pendingError } = await supabase
           .from("orders")
           .select("*")
-          .eq("status", "pending")
-          .gte("created_at", monthStartUTC.toISOString())
-          .lte("created_at", monthEndUTC.toISOString());
+          .eq("status", "pending");
 
         if (pendingError) {
           console.error("Error cargando órdenes pendientes:", pendingError);
@@ -85,6 +84,14 @@ export default function AdminDashboard() {
             // Si no hay medio de pago, usar la comisión almacenada
             return s + (r.commission_amount ?? 0);
           }, 0);
+
+        // Log para depuración
+        if (pendingOrders && pendingOrders.length > 0) {
+          const ordersWithPayment = pendingOrders.filter(o => o.payment_method).length;
+          const ordersWithoutPayment = pendingOrders.length - ordersWithPayment;
+          console.log(`📊 AdminDashboard - Órdenes pendientes: ${pendingOrders.length} total (${ordersWithPayment} con pago, ${ordersWithoutPayment} sin pago)`);
+          console.log(`💰 AdminDashboard - Total pagos pendientes calculado: ${formatCLP(pendingAll)}`);
+        }
 
         // Compras de la semana actual (pagadas, con proveedor)
         // ⚠️ CAMBIO: Filtrar por payout_week/payout_year para órdenes pagadas de la semana actual
