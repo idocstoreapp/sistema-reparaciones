@@ -191,6 +191,13 @@ export default function Dashboard() {
           return;
         }
 
+        // Verificar si el usuario está habilitado
+        if (profile.enabled === false) {
+          await supabase.auth.signOut();
+          setErrorMsg("Tu cuenta ha sido deshabilitada. Contacta al administrador.");
+          return;
+        }
+
         setMe(profile as Profile);
       } catch (err) {
         console.error("Error cargando el perfil:", err);

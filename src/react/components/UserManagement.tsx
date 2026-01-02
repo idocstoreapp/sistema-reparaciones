@@ -29,6 +29,7 @@ export default function UserManagement() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [formData, setFormData] = useState<UserFormData>({
@@ -59,6 +60,23 @@ export default function UserManagement() {
     loadUsers();
     loadBranches();
   }, []);
+
+  // Cerrar menú al hacer clic fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (openMenuId && !target.closest('.actions-menu-container')) {
+        setOpenMenuId(null);
+      }
+    }
+
+    if (openMenuId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [openMenuId]);
 
   async function loadBranches() {
     const { data } = await supabase
@@ -152,6 +170,7 @@ export default function UserManagement() {
         email: formData.email.trim(),
         local: formData.local.trim(),
         sucursal_id: (formData.role === "technician" || formData.role === "encargado") && formData.sucursal_id ? formData.sucursal_id : null,
+        enabled: true, // Los nuevos usuarios se crean habilitados por defecto
       });
 
       if (userError) {
@@ -298,6 +317,49 @@ export default function UserManagement() {
     }
   };
 
+  const handleToggleEnabled = async (user: ExtendedProfile) => {
+    const newEnabledState = !user.enabled;
+    const action = newEnabledState ? "habilitar" : "deshabilitar";
+    
+    if (!confirm(`¿Estás seguro de ${action} al usuario ${user.name} (${user.email})?`)) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setActionLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ enabled: newEnabledState })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      setSuccess(`Usuario ${newEnabledState ? "habilitado" : "deshabilitado"} exitosamente`);
+      await loadUsers();
+      
+      // Si se deshabilitó el usuario, cerrar su sesión si está activa
+      if (!newEnabledState && supabaseAdmin) {
+        // Intentar cerrar la sesión del usuario deshabilitado
+        // Nota: Esto requiere el service_role key
+        try {
+          await supabaseAdmin.auth.admin.signOut(user.id);
+        } catch (signOutError) {
+          // Ignorar errores al cerrar sesión (el usuario puede no estar conectado)
+          console.log("No se pudo cerrar la sesión del usuario (puede que no esté conectado)");
+        }
+      }
+      
+      window.dispatchEvent(new CustomEvent('userUpdated'));
+    } catch (err: any) {
+      setError(err.message || `Error al ${action} el usuario`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const openEditModal = (user: ExtendedProfile) => {
     setEditingUser(user);
     setEditFormData({
@@ -409,28 +471,86 @@ export default function UserManagement() {
                   <span className="text-slate-900">{formatDate(user.created_at)}</span>
                 </div>
               </div>
-              <div className="pt-3 border-t border-slate-100 space-y-2">
-                <button
-                  type="button"
-                  onClick={() => openEditModal(user)}
-                  className="w-full px-3 py-2 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition"
-                >
-                  ✏️ Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPasswordUser(user)}
-                  className="w-full px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
-                >
-                  🔑 Cambiar Contraseña
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleteUser(user)}
-                  className="w-full px-3 py-2 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-                >
-                  🗑️ Eliminar
-                </button>
+              <div className="pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-3 px-2">
+                  <span className="text-xs text-slate-600">Estado:</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    user.enabled !== false
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                  }`}>
+                    {user.enabled !== false ? "Habilitado" : "Deshabilitado"}
+                  </span>
+                </div>
+                <div className="relative actions-menu-container">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
+                    className="w-full px-3 py-2 text-xs bg-brand-light text-brand-white rounded hover:bg-brand transition font-medium flex items-center justify-center gap-2"
+                  >
+                    Ver Acciones
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${openMenuId === user.id ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {openMenuId === user.id && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg">
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openEditModal(user);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 transition flex items-center gap-2"
+                        >
+                          <span>✏️</span> Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPasswordUser(user);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 transition flex items-center gap-2"
+                        >
+                          <span>🔑</span> Cambiar Contraseña
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleToggleEnabled(user);
+                            setOpenMenuId(null);
+                          }}
+                          disabled={actionLoading}
+                          className={`w-full text-left px-4 py-2 text-xs hover:bg-slate-100 transition flex items-center gap-2 disabled:opacity-50 ${
+                            user.enabled !== false
+                              ? "text-amber-700"
+                              : "text-green-700"
+                          }`}
+                        >
+                          <span>{user.enabled !== false ? "🚫" : "✅"}</span>
+                          {user.enabled !== false ? "Deshabilitar" : "Habilitar"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteUser(user);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs text-red-700 hover:bg-red-50 transition flex items-center gap-2"
+                        >
+                          <span>🗑️</span> Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))
@@ -448,6 +568,7 @@ export default function UserManagement() {
               <th className="py-3 px-2 font-semibold text-slate-700">Sucursal</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Local</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Documento</th>
+              <th className="py-3 px-2 font-semibold text-slate-700">Estado</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Creado</th>
               <th className="py-3 px-2 font-semibold text-slate-700">Acciones</th>
             </tr>
@@ -455,7 +576,7 @@ export default function UserManagement() {
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-slate-500">
+                <td colSpan={9} className="py-8 text-center text-slate-500">
                   No hay usuarios registrados
                 </td>
               </tr>
@@ -486,31 +607,84 @@ export default function UserManagement() {
                   </td>
                   <td className="py-3 px-2">{user.local || "-"}</td>
                   <td className="py-3 px-2">{user.document_number || "-"}</td>
-                  <td className="py-3 px-2">{formatDate(user.created_at)}</td>
                   <td className="py-3 px-2">
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(user)}
-                        className="px-2 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition"
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      user.enabled !== false
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}>
+                      {user.enabled !== false ? "Habilitado" : "Deshabilitado"}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2">{formatDate(user.created_at)}</td>
+                  <td className="py-3 px-2 relative actions-menu-container">
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
+                      className="px-3 py-1.5 text-xs bg-brand-light text-brand-white rounded hover:bg-brand transition font-medium flex items-center gap-1"
+                    >
+                      Ver Acciones
+                      <svg 
+                        className={`w-3 h-3 transition-transform ${openMenuId === user.id ? 'rotate-180' : ''}`}
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
                       >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPasswordUser(user)}
-                        className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition"
-                      >
-                        Contraseña
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteUser(user)}
-                        className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openMenuId === user.id && (
+                      <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg z-10">
+                        <div className="py-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              openEditModal(user);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 transition flex items-center gap-2"
+                          >
+                            <span>✏️</span> Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPasswordUser(user);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 transition flex items-center gap-2"
+                          >
+                            <span>🔑</span> Cambiar Contraseña
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleToggleEnabled(user);
+                              setOpenMenuId(null);
+                            }}
+                            disabled={actionLoading}
+                            className={`w-full text-left px-4 py-2 text-xs hover:bg-slate-100 transition flex items-center gap-2 disabled:opacity-50 ${
+                              user.enabled !== false
+                                ? "text-amber-700"
+                                : "text-green-700"
+                            }`}
+                          >
+                            <span>{user.enabled !== false ? "🚫" : "✅"}</span>
+                            {user.enabled !== false ? "Deshabilitar" : "Habilitar"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteUser(user);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs text-red-700 hover:bg-red-50 transition flex items-center gap-2"
+                          >
+                            <span>🗑️</span> Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))

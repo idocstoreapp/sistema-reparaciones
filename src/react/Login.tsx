@@ -21,18 +21,42 @@ export default function Login() {
     setErr(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error: authError, data: authData } = await supabase.auth.signInWithPassword({
       email,
       password: pass,
     });
 
-    setLoading(false);
-
-    if (error) {
-      setErr(error.message);
-    } else {
-      window.location.href = "/dashboard";
+    if (authError) {
+      setLoading(false);
+      setErr(authError.message);
+      return;
     }
+
+    // Verificar si el usuario está habilitado
+    if (authData.user) {
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("enabled")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        setLoading(false);
+        setErr("Error al verificar el estado del usuario");
+        return;
+      }
+
+      if (profile && profile.enabled === false) {
+        // Cerrar sesión si el usuario está deshabilitado
+        await supabase.auth.signOut();
+        setLoading(false);
+        setErr("Tu cuenta ha sido deshabilitada. Contacta al administrador.");
+        return;
+      }
+    }
+
+    setLoading(false);
+    window.location.href = "/dashboard";
   }
 
   return (

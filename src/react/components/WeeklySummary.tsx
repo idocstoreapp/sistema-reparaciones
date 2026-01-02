@@ -54,23 +54,49 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         ? new Date(settlementsData[0].created_at)
         : null;
 
-      // Consulta para órdenes pagadas de la semana actual (basado en payout_week)
-      // Solo órdenes que fueron pagadas esta semana según su payout_week/payout_year
+      // Consulta para órdenes pagadas de la semana actual
+      // IMPORTANTE: Usar OR para capturar órdenes que cruzan el año
+      // 1. Por payout_week/payout_year (método principal)
+      // 2. Por paid_at dentro del rango de la semana actual (fallback para semanas que cruzan el año)
       // Si hay liquidación, solo contar órdenes pagadas DESPUÉS de la liquidación
-      let weekQuery = supabase
+      
+      // Consulta 1: Por payout_week/payout_year
+      let weekQuery1 = supabase
         .from("orders")
         .select("*")
         .eq("technician_id", technicianId)
-        .eq("status", "paid") // Solo órdenes pagadas tienen payout_week
+        .eq("status", "paid")
         .eq("payout_week", currentPayout.week)
         .eq("payout_year", currentPayout.year);
       
+      // Consulta 2: Por paid_at dentro del rango de la semana (para capturar semanas que cruzan el año)
+      let weekQuery2 = supabase
+        .from("orders")
+        .select("*")
+        .eq("technician_id", technicianId)
+        .eq("status", "paid")
+        .gte("paid_at", startUTC.toISOString())
+        .lte("paid_at", endUTC.toISOString());
+      
       // Si hay liquidación, excluir órdenes liquidadas (solo contar órdenes nuevas)
       if (lastSettlementDate) {
-        weekQuery = weekQuery.gte("paid_at", lastSettlementDate.toISOString());
+        weekQuery1 = weekQuery1.gte("paid_at", lastSettlementDate.toISOString());
+        weekQuery2 = weekQuery2.gte("paid_at", lastSettlementDate.toISOString());
       }
 
-      const { data: week, error: weekError } = await weekQuery;
+      const [result1, result2] = await Promise.all([
+        weekQuery1,
+        weekQuery2
+      ]);
+
+      // Combinar resultados y eliminar duplicados
+      const week1 = result1.data ?? [];
+      const week2 = result2.data ?? [];
+      const weekIds = new Set(week1.map(o => o.id));
+      const uniqueWeek2 = week2.filter(o => !weekIds.has(o.id));
+      const week = [...week1, ...uniqueWeek2];
+      
+      const weekError = result1.error || result2.error;
 
       // Consulta para órdenes pagadas del mes actual
       // Usar paid_at para filtrar por mes (retrocompatibilidad: órdenes sin payout_week usan paid_at)

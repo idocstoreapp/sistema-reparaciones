@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, formatDate } from "@/lib/date";
+import { currentWeekRange, formatDate, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, SalaryAdjustment, Order, SalarySettlement, Role } from "@/types";
@@ -177,17 +177,45 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
 
         // Consulta para órdenes - excluir las liquidadas
         // ⚠️ CAMBIO CRÍTICO: Usar payout_week/payout_year para órdenes pagadas
-        let ordersQuery = supabase
+        // IMPORTANTE: También buscar por paid_at para capturar semanas que cruzan el año
+        let ordersQuery1 = supabase
           .from("orders")
-          .select("commission_amount")
+          .select("id, commission_amount")
           .eq("technician_id", tech.id)
           .eq("status", "paid")
           .eq("payout_week", currentPayout.week)
           .eq("payout_year", currentPayout.year);
         
+        // Consulta alternativa por paid_at dentro del rango de la semana
+        const { start, end } = currentWeekRange();
+        const startUTC = dateToUTCStart(start);
+        const endUTC = dateToUTCEnd(end);
+        
+        let ordersQuery2 = supabase
+          .from("orders")
+          .select("id, commission_amount")
+          .eq("technician_id", tech.id)
+          .eq("status", "paid")
+          .gte("paid_at", startUTC.toISOString())
+          .lte("paid_at", endUTC.toISOString());
+        
         if (lastSettlementDate) {
-          ordersQuery = ordersQuery.gte("paid_at", lastSettlementDate.toISOString());
+          ordersQuery1 = ordersQuery1.gte("paid_at", lastSettlementDate.toISOString());
+          ordersQuery2 = ordersQuery2.gte("paid_at", lastSettlementDate.toISOString());
         }
+        
+        // Ejecutar ambas consultas y combinar resultados
+        const [result1, result2] = await Promise.all([
+          ordersQuery1,
+          ordersQuery2
+        ]);
+        
+        // Combinar y eliminar duplicados
+        const orders1 = result1.data ?? [];
+        const orders2 = result2.data ?? [];
+        const orderIds = new Set(orders1.map(o => o.id));
+        const uniqueOrders2 = orders2.filter(o => o.id && !orderIds.has(o.id));
+        const allOrders = [...orders1, ...uniqueOrders2];
 
         // Consulta para ajustes - excluir los liquidadas
         let adjustmentsQuery = supabase
@@ -214,12 +242,10 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         }
 
         const [
-          { data: orders },
           { data: adjustmentsData },
           { data: returnedData },
           { data: settlementAmounts },
         ] = await Promise.all([
-          ordersQuery,
           adjustmentsQuery.order("created_at", { ascending: false }),
           returnsQuery,
           supabase
@@ -229,7 +255,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             .eq("week_start", weekStartISO),
         ]);
 
-        totals[tech.id] = orders?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
+        // Usar allOrders que ya fue calculado arriba (combinación de ambas consultas)
+        totals[tech.id] = allOrders.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
         
         // Calcular total de ajustes disponibles (ya filtrados por liquidación)
         const adjustmentsForWeek = adjustmentsData

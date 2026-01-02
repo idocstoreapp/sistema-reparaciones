@@ -10,6 +10,7 @@ export interface Profile {
   avatar_url?: string | null;
   local?: string | null;
   sucursal_id?: string | null;
+  enabled?: boolean;
 }
 
 export interface Order {
