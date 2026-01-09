@@ -33,25 +33,31 @@ export default function Login() {
     }
 
     // Verificar si el usuario está habilitado
+    // Si el campo enabled no existe o es NULL, se considera habilitado por defecto
     if (authData.user) {
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("enabled")
-        .eq("id", authData.user.id)
-        .maybeSingle();
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("enabled")
+          .eq("id", authData.user.id)
+          .maybeSingle();
 
-      if (profileError) {
-        setLoading(false);
-        setErr("Error al verificar el estado del usuario");
-        return;
-      }
-
-      if (profile && profile.enabled === false) {
-        // Cerrar sesión si el usuario está deshabilitado
-        await supabase.auth.signOut();
-        setLoading(false);
-        setErr("Tu cuenta ha sido deshabilitada. Contacta al administrador.");
-        return;
+        // Si hay error al consultar o el perfil no existe, permitir el login
+        // (puede ser que el campo enabled no exista aún en la BD)
+        if (profileError) {
+          console.warn("No se pudo verificar el estado del usuario, permitiendo login:", profileError);
+          // Continuar con el login si hay error (retrocompatibilidad)
+        } else if (profile && profile.enabled === false) {
+          // Solo bloquear si explícitamente está deshabilitado
+          await supabase.auth.signOut();
+          setLoading(false);
+          setErr("Tu cuenta ha sido deshabilitada. Contacta al administrador.");
+          return;
+        }
+        // Si profile.enabled es null, undefined o true, permitir el login
+      } catch (err) {
+        // Si hay cualquier error (campo no existe, etc.), permitir el login
+        console.warn("Error al verificar enabled, permitiendo login:", err);
       }
     }
 

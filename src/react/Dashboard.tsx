@@ -192,11 +192,13 @@ export default function Dashboard() {
         }
 
         // Verificar si el usuario está habilitado
+        // Si el campo enabled no existe o es NULL, se considera habilitado por defecto
         if (profile.enabled === false) {
           await supabase.auth.signOut();
           setErrorMsg("Tu cuenta ha sido deshabilitada. Contacta al administrador.");
           return;
         }
+        // Si profile.enabled es null, undefined o true, permitir el acceso
 
         setMe(profile as Profile);
       } catch (err) {

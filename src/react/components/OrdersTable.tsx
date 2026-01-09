@@ -681,11 +681,30 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     }
 
     setSavingNotes((prev) => ({ ...prev, [orderId]: true }));
+    
+    // Obtener el ID del usuario autenticado si technicianId no está disponible
+    let finalTechnicianId = technicianId;
+    if (!finalTechnicianId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Verificar si el usuario es técnico
+        const { data: profile } = await supabase
+          .from("users")
+          .select("id, role")
+          .eq("id", user.id)
+          .maybeSingle();
+        
+        if (profile && (profile.role === "technician" || profile.role === "encargado")) {
+          finalTechnicianId = profile.id;
+        }
+      }
+    }
+    
     const { data, error } = await supabase
       .from("order_notes")
       .insert({
         order_id: orderId,
-        technician_id: technicianId || null,
+        technician_id: finalTechnicianId || null,
         note: content,
       })
       .select()
@@ -694,7 +713,13 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
 
     if (error) {
       console.error("Error saving order note:", error);
-      alert("No pudimos guardar la nota. Intenta nuevamente.");
+      console.error("Error details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      alert(`No pudimos guardar la nota. Error: ${error.message || "Intenta nuevamente."}`);
       return;
     }
 

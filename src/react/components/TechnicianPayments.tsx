@@ -218,9 +218,10 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         const allOrders = [...orders1, ...uniqueOrders2];
 
         // Consulta para ajustes - excluir los liquidadas
+        // IMPORTANTE: Incluir aplicaciones para calcular el saldo restante correctamente
         let adjustmentsQuery = supabase
           .from("salary_adjustments")
-          .select("amount, available_from, created_at, id, type, note")
+          .select("amount, available_from, created_at, id, type, note, applications:salary_adjustment_applications(applied_amount)")
           .eq("technician_id", tech.id);
         
         if (lastSettlementDate) {
@@ -242,7 +243,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         }
 
         const [
-          { data: adjustmentsData },
+          { data: adjustmentsData, error: adjustmentsError },
           { data: returnedData },
           { data: settlementAmounts },
         ] = await Promise.all([
@@ -255,18 +256,47 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             .eq("week_start", weekStartISO),
         ]);
 
+        // Si hay error al cargar aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
+        let adjustmentsWithApplications = adjustmentsData;
+        if (adjustmentsError) {
+          console.warn("No se pudieron cargar aplicaciones de ajustes, usando monto total:", adjustmentsError);
+          // Intentar cargar sin aplicaciones
+          const { data: adjustmentsWithoutApps } = await supabase
+            .from("salary_adjustments")
+            .select("amount, available_from, created_at, id, type, note")
+            .eq("technician_id", tech.id);
+          
+          if (lastSettlementDate) {
+            adjustmentsWithApplications = adjustmentsWithoutApps?.filter(adj => 
+              new Date(adj.created_at) >= lastSettlementDate
+            ) || [];
+          } else {
+            adjustmentsWithApplications = adjustmentsWithoutApps || [];
+          }
+        }
+
         // Usar allOrders que ya fue calculado arriba (combinación de ambas consultas)
         totals[tech.id] = allOrders.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
         
-        // Calcular total de ajustes disponibles (ya filtrados por liquidación)
-        const adjustmentsForWeek = adjustmentsData
-          ?.filter((adj) => {
+        // Calcular total de ajustes disponibles RESTANDO las aplicaciones ya hechas
+        const adjustmentsForWeek = (adjustmentsWithApplications || [])
+          .filter((adj: any) => {
             const availableFrom = adj.available_from
               ? new Date(adj.available_from)
               : new Date(adj.created_at);
             return availableFrom <= end;
           })
-          .reduce((sum, adj) => sum + (adj.amount ?? 0), 0) ?? 0;
+          .reduce((sum: number, adj: any) => {
+            // Calcular aplicaciones totales para este ajuste
+            const applications = adj.applications || [];
+            const appliedTotal = applications.reduce(
+              (appSum: number, app: any) => appSum + (app.applied_amount || 0),
+              0
+            );
+            // Restar aplicaciones del monto total para obtener el saldo restante
+            const remaining = Math.max((adj.amount || 0) - appliedTotal, 0);
+            return sum + remaining;
+          }, 0);
 
         adjustmentTotals[tech.id] = adjustmentsForWeek;
         returnsTotals[tech.id] =
@@ -301,32 +331,58 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
       // Los ajustes y devoluciones persisten hasta que se liquiden manualmente
 
       try {
-        const [{ data: adjustmentsData, error: adjError }, { data: returnedData, error: retError }] =
-          await Promise.all([
-        supabase
+        // Intentar cargar con aplicaciones primero
+        let adjustmentsResponse = await supabase
           .from("salary_adjustments")
-          .select("*")
-              .eq("technician_id", techId)
-          // No filtrar por semana - cargar TODOS los ajustes pendientes
-          // Los ajustes persisten hasta que se liquiden manualmente
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("orders")
-          .select("*")
-              .eq("technician_id", techId)
-          .in("status", ["returned", "cancelled"])
-          // No filtrar por semana - cargar TODAS las devoluciones pendientes
-          // Las devoluciones persisten hasta que se liquiden manualmente
-          .order("created_at", { ascending: false }),
-      ]);
+          .select("*, applications:salary_adjustment_applications(applied_amount)")
+          .eq("technician_id", techId)
+          .order("created_at", { ascending: false });
 
-        if (adjError || retError) {
-          throw adjError || retError;
+        // Si falla, cargar sin aplicaciones (retrocompatibilidad)
+        if (adjustmentsResponse.error) {
+          console.warn("No se pudieron cargar aplicaciones, usando monto total:", adjustmentsResponse.error);
+          adjustmentsResponse = await supabase
+            .from("salary_adjustments")
+            .select("*")
+            .eq("technician_id", techId)
+            .order("created_at", { ascending: false });
         }
+
+        const [{ data: returnedData, error: retError }] = await Promise.all([
+          supabase
+            .from("orders")
+            .select("*")
+            .eq("technician_id", techId)
+            .in("status", ["returned", "cancelled"])
+            // No filtrar por semana - cargar TODAS las devoluciones pendientes
+            // Las devoluciones persisten hasta que se liquiden manualmente
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (adjustmentsResponse.error || retError) {
+          throw adjustmentsResponse.error || retError;
+        }
+
+        // Calcular saldo restante para cada ajuste restando las aplicaciones
+        const adjustmentsWithRemaining = (adjustmentsResponse.data || []).map((adj: any) => {
+          const applications = adj.applications || [];
+          const appliedTotal = applications.reduce(
+            (sum: number, app: any) => sum + (app.applied_amount || 0),
+            0
+          );
+          const remaining = Math.max((adj.amount || 0) - appliedTotal, 0);
+          
+          // Solo incluir ajustes que aún tienen saldo pendiente
+          return {
+            ...adj,
+            remaining,
+            appliedTotal,
+          };
+        }).filter((adj: any) => adj.remaining > 0); // Solo mostrar ajustes con saldo pendiente
 
         setAdjustmentsByTech((prev) => ({
           ...prev,
-          [techId]: (adjustmentsData as SalaryAdjustment[]) ?? [],
+          [techId]: adjustmentsWithRemaining as SalaryAdjustment[],
         }));
         setReturnsByTech((prev) => ({
           ...prev,
