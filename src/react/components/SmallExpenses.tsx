@@ -25,6 +25,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
   } | null>(null);
   const [expenses, setExpenses] = useState<SmallExpense[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [allCustomTypes, setAllCustomTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<SmallExpense | null>(null);
@@ -81,6 +82,18 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
         .order("name");
 
       setExpenses(expensesData || []);
+
+      // Cargar todos los tipos personalizados únicos (sin filtro de fecha para que siempre estén disponibles)
+      const { data: allExpensesData } = await supabase
+        .from("small_expenses")
+        .select("tipo")
+        .eq("sucursal_id", sucursalId);
+
+      const tiposUnicos = Array.from(new Set((allExpensesData || []).map(exp => exp.tipo))).filter(Boolean);
+      const tiposPredefinidos = ["aseo", "mercaderia", "compras_pequenas"];
+      const tiposPersonalizados = tiposUnicos.filter(tipo => !tiposPredefinidos.includes(tipo));
+      setAllCustomTypes(tiposPersonalizados);
+
       setBranches(branchesData || []);
     } catch (err) {
       console.error("Error cargando gastos hormiga:", err);
@@ -255,6 +268,9 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
     return acc;
   }, {} as Record<string, number>);
 
+  // Usar los tipos personalizados cargados (sin filtro de fecha)
+  const tiposPersonalizados = allCustomTypes;
+
   const total = expenses.reduce((sum, exp) => sum + exp.monto, 0);
 
   if (loading) {
@@ -360,10 +376,21 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
                   className="w-full border border-slate-300 rounded-md px-3 py-2"
                   required
                 >
-                  <option value="aseo">Aseo</option>
-                  <option value="mercaderia">Mercadería</option>
-                  <option value="compras_pequenas">Compras Pequeñas</option>
-                  <option value="personalizado">+ Otro (Personalizado)</option>
+                  <optgroup label="Tipos Predefinidos">
+                    <option value="aseo">Aseo</option>
+                    <option value="mercaderia">Mercadería</option>
+                    <option value="compras_pequenas">Compras Pequeñas</option>
+                  </optgroup>
+                  {tiposPersonalizados.length > 0 && (
+                    <optgroup label="Tipos Personalizados">
+                      {tiposPersonalizados.map((tipo) => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Nuevo">
+                    <option value="personalizado">+ Otro (Personalizado)</option>
+                  </optgroup>
                 </select>
                 {formData.usarTipoPersonalizado && (
                   <input

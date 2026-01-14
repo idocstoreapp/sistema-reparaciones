@@ -24,6 +24,7 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
   } | null>(null);
   const [expenses, setExpenses] = useState<GeneralExpense[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [allCustomTypes, setAllCustomTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<GeneralExpense | null>(null);
@@ -86,6 +87,22 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
       if (expensesError) throw expensesError;
 
       setExpenses(expensesData || []);
+
+      // Cargar todos los tipos personalizados únicos (sin filtro de fecha para que siempre estén disponibles)
+      let allExpensesQuery = supabase
+        .from("general_expenses")
+        .select("tipo");
+      
+      if (sucursalId) {
+        allExpensesQuery = allExpensesQuery.eq("sucursal_id", sucursalId);
+      }
+
+      const { data: allExpensesData } = await allExpensesQuery;
+
+      const tiposUnicos = Array.from(new Set((allExpensesData || []).map(exp => exp.tipo))).filter(Boolean);
+      const tiposPredefinidos = ["arriendo", "internet", "luz", "agua", "facturas", "servicios"];
+      const tiposPersonalizados = tiposUnicos.filter(tipo => !tiposPredefinidos.includes(tipo));
+      setAllCustomTypes(tiposPersonalizados);
     } catch (err) {
       console.error("Error cargando gastos generales:", err);
       setError("Error al cargar los gastos. Intenta nuevamente.");
@@ -275,10 +292,8 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
     return acc;
   }, {} as Record<string, number>);
 
-  // Obtener tipos únicos para mostrar en el resumen
-  const tiposUnicos = Array.from(new Set(expenses.map(exp => exp.tipo))).filter(Boolean);
-  const tiposPredefinidos = ["arriendo", "internet", "luz", "agua", "facturas", "servicios"];
-  const tiposPersonalizados = tiposUnicos.filter(tipo => !tiposPredefinidos.includes(tipo));
+  // Usar los tipos personalizados cargados (sin filtro de fecha)
+  const tiposPersonalizados = allCustomTypes;
 
   const total = expenses.reduce((sum, exp) => sum + exp.monto, 0);
 
@@ -432,13 +447,24 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
                   className="w-full border border-slate-300 rounded-md px-3 py-2"
                   required
                 >
-                  <option value="arriendo">Arriendo</option>
-                  <option value="internet">Internet</option>
-                  <option value="luz">Luz</option>
-                  <option value="agua">Agua</option>
-                  <option value="facturas">Facturas</option>
-                  <option value="servicios">Servicios</option>
-                  <option value="personalizado">+ Otro (Personalizado)</option>
+                  <optgroup label="Tipos Predefinidos">
+                    <option value="arriendo">Arriendo</option>
+                    <option value="internet">Internet</option>
+                    <option value="luz">Luz</option>
+                    <option value="agua">Agua</option>
+                    <option value="facturas">Facturas</option>
+                    <option value="servicios">Servicios</option>
+                  </optgroup>
+                  {tiposPersonalizados.length > 0 && (
+                    <optgroup label="Tipos Personalizados">
+                      {tiposPersonalizados.map((tipo) => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Nuevo">
+                    <option value="personalizado">+ Otro (Personalizado)</option>
+                  </optgroup>
                 </select>
                 {formData.usarTipoPersonalizado && (
                   <input
