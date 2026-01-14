@@ -52,31 +52,58 @@ export default function BranchManagement() {
   async function loadGlobalSummary() {
     try {
       // Total gastos hormiga (todas las sucursales)
-      const { data: smallExpenses } = await supabase
+      const { data: smallExpenses, error: smallExpensesError } = await supabase
         .from("small_expenses")
         .select("monto");
+
+      if (smallExpensesError) {
+        console.error("Error cargando gastos hormiga:", smallExpensesError);
+      }
 
       const total_small_expenses = (smallExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0);
 
       // Total gastos generales (todas las sucursales)
-      const { data: generalExpenses } = await supabase
+      const { data: generalExpenses, error: generalExpensesError } = await supabase
         .from("general_expenses")
         .select("monto");
+
+      if (generalExpensesError) {
+        console.error("Error cargando gastos generales:", generalExpensesError);
+        console.error("Detalles del error:", {
+          message: generalExpensesError.message,
+          details: generalExpensesError.details,
+          hint: generalExpensesError.hint,
+          code: generalExpensesError.code,
+        });
+      } else {
+        console.log("Gastos generales cargados:", {
+          cantidad: generalExpenses?.length || 0,
+          total: (generalExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0),
+        });
+      }
 
       const total_general_expenses = (generalExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0);
 
       // Total repuestos (de órdenes pagadas)
-      const { data: orders } = await supabase
+      const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("replacement_cost")
         .eq("status", "paid");
 
+      if (ordersError) {
+        console.error("Error cargando órdenes:", ordersError);
+      }
+
       const total_repuestos = (orders || []).reduce((sum, order) => sum + (order.replacement_cost || 0), 0);
 
       // Total pagos a técnicos (de salary_settlements)
-      const { data: settlements } = await supabase
+      const { data: settlements, error: settlementsError } = await supabase
         .from("salary_settlements")
         .select("amount, technician_id");
+
+      if (settlementsError) {
+        console.error("Error cargando liquidaciones:", settlementsError);
+      }
 
       const total_pagos_tecnicos = (settlements || []).reduce((sum, settlement) => sum + (settlement.amount || 0), 0);
 
@@ -103,27 +130,50 @@ export default function BranchManagement() {
       if (!branch) return;
 
       // Gastos hormiga de la sucursal
-      const { data: smallExpenses } = await supabase
+      const { data: smallExpenses, error: smallExpensesError } = await supabase
         .from("small_expenses")
         .select("monto")
         .eq("sucursal_id", branchId);
 
+      if (smallExpensesError) {
+        console.error(`Error cargando gastos hormiga de sucursal ${branchId}:`, smallExpensesError);
+      }
+
       const total_small_expenses = (smallExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0);
 
       // Gastos generales de la sucursal
-      const { data: generalExpenses } = await supabase
+      const { data: generalExpenses, error: generalExpensesError } = await supabase
         .from("general_expenses")
         .select("monto")
         .eq("sucursal_id", branchId);
 
+      if (generalExpensesError) {
+        console.error(`Error cargando gastos generales de sucursal ${branchId}:`, generalExpensesError);
+        console.error("Detalles del error:", {
+          message: generalExpensesError.message,
+          details: generalExpensesError.details,
+          hint: generalExpensesError.hint,
+          code: generalExpensesError.code,
+        });
+      } else {
+        console.log(`Gastos generales de sucursal ${branchId}:`, {
+          cantidad: generalExpenses?.length || 0,
+          total: (generalExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0),
+        });
+      }
+
       const total_general_expenses = (generalExpenses || []).reduce((sum, exp) => sum + (exp.monto || 0), 0);
 
       // Repuestos de la sucursal (de órdenes pagadas)
-      const { data: orders } = await supabase
+      const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("replacement_cost")
         .eq("status", "paid")
         .eq("sucursal_id", branchId);
+
+      if (ordersError) {
+        console.error(`Error cargando órdenes de sucursal ${branchId}:`, ordersError);
+      }
 
       const total_repuestos = (orders || []).reduce((sum, order) => sum + (order.replacement_cost || 0), 0);
 
@@ -138,10 +188,14 @@ export default function BranchManagement() {
 
       let total_pagos_tecnicos = 0;
       if (technicianIds.length > 0) {
-        const { data: settlements } = await supabase
+        const { data: settlements, error: settlementsError } = await supabase
           .from("salary_settlements")
           .select("amount")
           .in("technician_id", technicianIds);
+
+        if (settlementsError) {
+          console.error(`Error cargando liquidaciones de técnicos de sucursal ${branchId}:`, settlementsError);
+        }
 
         total_pagos_tecnicos = (settlements || []).reduce((sum, settlement) => sum + (settlement.amount || 0), 0);
       }

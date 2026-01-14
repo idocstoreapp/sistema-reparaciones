@@ -36,6 +36,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
     monto: "",
     fecha: new Date().toISOString().split("T")[0],
     descripcion: "",
+    payment_method: "EFECTIVO" as "EFECTIVO" | "TRANSFERENCIA" | "DEBITO" | "CREDITO",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +127,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
           monto: parseFloat(formData.monto),
           fecha: formData.fecha,
           descripcion: formData.descripcion.trim() || null,
+          payment_method: formData.payment_method,
         });
 
       if (insertError) throw insertError;
@@ -138,6 +140,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
         monto: "",
         fecha: new Date().toISOString().split("T")[0],
         descripcion: "",
+        payment_method: "EFECTIVO",
       });
       setShowForm(false);
       setEditingExpense(null);
@@ -179,6 +182,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
           monto: parseFloat(formData.monto),
           fecha: formData.fecha,
           descripcion: formData.descripcion.trim() || null,
+          payment_method: formData.payment_method,
         })
         .eq("id", editingExpense.id);
 
@@ -213,6 +217,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
       monto: expense.monto.toString(),
       fecha: expense.fecha,
       descripcion: expense.descripcion || "",
+      payment_method: expense.payment_method || "EFECTIVO",
     });
     setShowForm(true);
   }
@@ -406,6 +411,22 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
                 placeholder="Ej: Compra de productos de limpieza"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Medio de Pago *
+              </label>
+              <select
+                value={formData.payment_method}
+                onChange={(e) => setFormData({ ...formData, payment_method: e.target.value as "EFECTIVO" | "TRANSFERENCIA" | "DEBITO" | "CREDITO" })}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                required
+              >
+                <option value="EFECTIVO">Efectivo</option>
+                <option value="TRANSFERENCIA">Transferencia</option>
+                <option value="DEBITO">Débito</option>
+                <option value="CREDITO">Crédito</option>
+              </select>
+            </div>
           </div>
           <button
             type="submit"
@@ -473,6 +494,15 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
                 <div className="text-xs text-slate-500 mb-0.5">Descripción</div>
                 <div className="text-sm text-slate-900">{exp.descripcion || "-"}</div>
               </div>
+              <div className="mb-2">
+                <div className="text-xs text-slate-500 mb-0.5">Medio de Pago</div>
+                <div className="text-sm font-medium text-slate-900">
+                  {exp.payment_method === "EFECTIVO" ? "💵 Efectivo" :
+                   exp.payment_method === "TRANSFERENCIA" ? "🏦 Transferencia" :
+                   exp.payment_method === "DEBITO" ? "💳 Débito" :
+                   exp.payment_method === "CREDITO" ? "💳 Crédito" : exp.payment_method || "-"}
+                </div>
+              </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <div className="text-xs text-slate-500">
                   Registrado por: <span className="text-slate-900">{(exp.user as Profile)?.name || "N/A"}</span>
@@ -509,6 +539,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
               <th className="text-left py-2 px-2 font-semibold text-slate-700">Fecha</th>
               <th className="text-left py-2 px-2 font-semibold text-slate-700">Tipo</th>
               <th className="text-left py-2 px-2 font-semibold text-slate-700">Descripción</th>
+              <th className="text-left py-2 px-2 font-semibold text-slate-700">Medio de Pago</th>
               <th className="text-right py-2 px-2 font-semibold text-slate-700">Monto</th>
               <th className="text-left py-2 px-2 font-semibold text-slate-700">Registrado por</th>
               {isAdmin && <th className="text-left py-2 px-2 font-semibold text-slate-700">Acciones</th>}
@@ -517,7 +548,7 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
           <tbody>
             {expenses.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="text-center py-4 text-slate-500">
+                <td colSpan={isAdmin ? 7 : 6} className="text-center py-4 text-slate-500">
                   No hay gastos registrados
                 </td>
               </tr>
@@ -531,6 +562,14 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
                     </span>
                   </td>
                   <td className="py-2 px-2">{exp.descripcion || "-"}</td>
+                  <td className="py-2 px-2">
+                    <span className="text-xs font-medium">
+                      {exp.payment_method === "EFECTIVO" ? "💵 Efectivo" :
+                       exp.payment_method === "TRANSFERENCIA" ? "🏦 Transferencia" :
+                       exp.payment_method === "DEBITO" ? "💳 Débito" :
+                       exp.payment_method === "CREDITO" ? "💳 Crédito" : exp.payment_method || "-"}
+                    </span>
+                  </td>
                   <td className="py-2 px-2 text-right font-medium">{formatCLP(exp.monto)}</td>
                   <td className="py-2 px-2 text-xs text-slate-600">
                     {(exp.user as Profile)?.name || "N/A"}

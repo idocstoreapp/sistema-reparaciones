@@ -109,6 +109,7 @@ export interface SmallExpense {
   monto: number;
   fecha: string;
   descripcion?: string | null;
+  payment_method: "EFECTIVO" | "TRANSFERENCIA" | "DEBITO" | "CREDITO";
   created_at: string;
   branch?: Branch;
   user?: Profile;
@@ -122,6 +123,7 @@ export interface GeneralExpense {
   monto: number;
   fecha: string;
   descripcion?: string | null;
+  payment_method: "EFECTIVO" | "TRANSFERENCIA" | "DEBITO" | "CREDITO";
   created_at: string;
   branch?: Branch;
   user?: Profile;

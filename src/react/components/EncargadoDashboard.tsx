@@ -4,6 +4,7 @@ import { currentWeekRange, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, Branch } from "@/types";
 import SmallExpenses from "./SmallExpenses";
+import GeneralExpenses from "./GeneralExpenses";
 import TechnicianPayments from "./TechnicianPayments";
 import OrdersTable from "./OrdersTable";
 
@@ -12,7 +13,7 @@ export default function EncargadoDashboard() {
   const [branch, setBranch] = useState<Branch | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [activeSection, setActiveSection] = useState<"expenses" | "payments" | "orders">("expenses");
+  const [activeSection, setActiveSection] = useState<"expenses" | "general_expenses" | "payments" | "orders">("expenses");
 
   useEffect(() => {
     loadData();
@@ -115,6 +116,16 @@ export default function EncargadoDashboard() {
             🐜 Gastos Hormiga
           </button>
           <button
+            onClick={() => setActiveSection("general_expenses")}
+            className={`px-3 sm:px-4 py-2 text-sm sm:text-base rounded-md transition font-medium ${
+              activeSection === "general_expenses"
+                ? "bg-brand-light text-white"
+                : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+          >
+            🏢 Gastos Generales
+          </button>
+          <button
             onClick={() => setActiveSection("payments")}
             className={`px-3 sm:px-4 py-2 text-sm sm:text-base rounded-md transition font-medium ${
               activeSection === "payments"
@@ -139,7 +150,11 @@ export default function EncargadoDashboard() {
 
       {/* Contenido según sección activa */}
       {activeSection === "expenses" && (
-        <SmallExpenses sucursalId={branch.id} refreshKey={refreshKey} hideKPIs={true} />
+        <SmallExpenses sucursalId={branch.id} refreshKey={refreshKey} hideKPIs={true} userRole={me.role} />
+      )}
+
+      {activeSection === "general_expenses" && (
+        <GeneralExpenses sucursalId={branch.id} refreshKey={refreshKey} userRole={me.role} />
       )}
 
       {activeSection === "payments" && (

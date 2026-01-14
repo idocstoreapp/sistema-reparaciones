@@ -557,7 +557,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
             </div>
           )}
 
-          {/* Gastos Generales (solo admin) */}
+          {/* Gastos Generales */}
           {selectedBranch ? (
             <GeneralExpenses
               sucursalId={selectedBranch}
@@ -572,13 +572,22 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
           )}
         </div>
       ) : (
-        // Encargado: solo puede ver/agregar gastos hormiga de su sucursal
+        // Encargado: puede ver/agregar gastos hormiga y generales de su sucursal
         encargadoBranchId ? (
-          <SmallExpenses
-            sucursalId={encargadoBranchId}
-            refreshKey={combinedRefreshKey}
-            dateFilter={filterDates}
-          />
+          <>
+            <SmallExpenses
+              sucursalId={encargadoBranchId}
+              refreshKey={combinedRefreshKey}
+              dateFilter={filterDates}
+              userRole={userRole}
+            />
+            <GeneralExpenses
+              sucursalId={encargadoBranchId}
+              refreshKey={combinedRefreshKey}
+              dateFilter={filterDates}
+              userRole={userRole}
+            />
+          </>
         ) : (
           <div className="bg-white rounded-lg shadow-md p-6">
             <p className="text-slate-600">No tienes una sucursal asignada.</p>
