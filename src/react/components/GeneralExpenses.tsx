@@ -157,7 +157,12 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
       await loadData();
     } catch (err: any) {
       console.error("Error guardando gasto:", err);
-      setError(err.message || "Error al guardar el gasto. Intenta nuevamente.");
+      // Mostrar mensaje de error más descriptivo
+      if (err.message && err.message.includes("constraint")) {
+        setError("Error: El tipo de gasto no es válido. Asegúrate de ingresar un tipo válido o contacta al administrador para actualizar los permisos de tipos personalizados.");
+      } else {
+        setError(err.message || "Error al guardar el gasto. Intenta nuevamente.");
+      }
     } finally {
       setSaving(false);
     }
