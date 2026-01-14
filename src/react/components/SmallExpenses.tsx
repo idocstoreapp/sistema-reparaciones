@@ -440,28 +440,28 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
 
       {/* Resumen por tipo - Solo mostrar si hideKPIs es false */}
       {!hideKPIs && (
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Aseo</p>
-          <p className="text-lg font-semibold text-slate-900">
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
+          <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Aseo</p>
+          <p className="text-base font-bold text-slate-900 leading-tight break-words">
             {formatCLP(totalByType["aseo"] || 0)}
           </p>
         </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Mercadería</p>
-          <p className="text-lg font-semibold text-slate-900">
+        <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
+          <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Mercadería</p>
+          <p className="text-base font-bold text-slate-900 leading-tight break-words">
             {formatCLP(totalByType["mercaderia"] || 0)}
           </p>
         </div>
-        <div className="bg-slate-50 p-3 rounded">
-          <p className="text-xs text-slate-600">Compras Pequeñas</p>
-          <p className="text-lg font-semibold text-slate-900">
+        <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
+          <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Compras Pequeñas</p>
+          <p className="text-base font-bold text-slate-900 leading-tight break-words">
             {formatCLP(totalByType["compras_pequenas"] || 0)}
           </p>
         </div>
-        <div className="bg-brand-light/10 p-3 rounded border-2 border-brand-light">
-          <p className="text-xs text-slate-600">Total</p>
-          <p className="text-lg font-semibold text-brand">
+        <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm min-h-[120px] flex flex-col justify-between">
+          <p className="text-xs font-semibold text-slate-700 mb-2 leading-tight">Total</p>
+          <p className="text-base font-bold text-brand leading-tight break-words">
             {formatCLP(total)}
           </p>
         </div>

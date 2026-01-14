@@ -516,42 +516,42 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
       {/* Resumen por tipo */}
       <div className="space-y-4">
         {/* Tipos predefinidos - Layout mejorado */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Arriendo</p>
-            <p className="text-lg font-bold text-slate-900 leading-tight">
+            <p className="text-base font-bold text-slate-900 leading-tight break-words">
               {formatCLP(totalByType["arriendo"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Internet</p>
-            <p className="text-lg font-bold text-slate-900 leading-tight">
+            <p className="text-base font-bold text-slate-900 leading-tight break-words">
               {formatCLP(totalByType["internet"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Luz</p>
-            <p className="text-lg font-bold text-slate-900 leading-tight">
+            <p className="text-base font-bold text-slate-900 leading-tight break-words">
               {formatCLP(totalByType["luz"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">Agua</p>
-            <p className="text-lg font-bold text-slate-900 leading-tight">
+            <p className="text-base font-bold text-slate-900 leading-tight break-words">
               {formatCLP(totalByType["agua"] || 0)}
             </p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[100px] flex flex-col justify-between">
+          <div className="bg-slate-50 p-4 rounded-lg shadow-sm border border-slate-200 min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-600 mb-2 leading-tight">
               Facturas/<br />Servicios
             </p>
-            <p className="text-lg font-bold text-slate-900 leading-tight">
+            <p className="text-base font-bold text-slate-900 leading-tight break-words">
               {formatCLP((totalByType["facturas"] || 0) + (totalByType["servicios"] || 0))}
             </p>
           </div>
-          <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm min-h-[100px] flex flex-col justify-between">
+          <div className="bg-brand-light/10 p-4 rounded-lg border-2 border-brand-light shadow-sm min-h-[120px] flex flex-col justify-between">
             <p className="text-xs font-semibold text-slate-700 mb-2 leading-tight">Total</p>
-            <p className="text-lg font-bold text-brand leading-tight">
+            <p className="text-base font-bold text-brand leading-tight break-words">
               {formatCLP(total)}
             </p>
           </div>
