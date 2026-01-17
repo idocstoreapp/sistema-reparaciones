@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatCLP } from "@/lib/currency";
-import { currentMonthRange, formatDate } from "@/lib/date";
+import { currentMonthRange, currentWeekRange, formatDate, dateStringToUTCStart, dateStringToUTCEnd } from "@/lib/date";
 import type { Branch, BranchExpensesSummary } from "@/types";
 import SmallExpenses from "./SmallExpenses";
 import GeneralExpenses from "./GeneralExpenses";
@@ -48,13 +48,27 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
     if (filterMode === "month") {
       const [year, month] = selectedMonth.split("-").map(Number);
       const start = new Date(year, month - 1, 1);
-      const end = new Date(year, month, 0, 23, 59, 59, 999);
-      return {
-        start: start.toISOString().split("T")[0],
-        end: end.toISOString().split("T")[0],
+      // Último día del mes: new Date(año, mes, 0) da el último día del mes anterior
+      // Entonces new Date(año, mesActual+1, 0) da el último día del mes actual
+      const lastDayOfMonth = new Date(year, month, 0);
+      const end = new Date(year, month - 1, lastDayOfMonth.getDate(), 23, 59, 59, 999);
+      
+      // Formatear fechas sin convertir a UTC (para evitar cambios de día por zona horaria)
+      const formatDateLocal = (date: Date): string => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+      
+      const result = {
+        start: formatDateLocal(start),
+        end: formatDateLocal(end),
         startDate: start,
         endDate: end,
       };
+      console.log(`[getFilterDates] Mes seleccionado: ${selectedMonth}`, result);
+      return result;
     } else {
       return {
         start: dateRange.start,
@@ -174,31 +188,78 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
         0
       );
 
-      // Pagos a técnicos (de salary_settlements) - filtrado por created_at del mes
-      const { data: technicianSettlements } = await supabase
-        .from("salary_settlements")
-        .select("total_amount, created_at")
-        .eq("user_role", "technician")
-        .gte("created_at", start + "T00:00:00")
-        .lte("created_at", end + "T23:59:59");
+      // Pagos a técnicos - CALCULADO DESDE ÓRDENES PAGADAS (igual que el historial)
+      // El historial muestra pagos "Auto-generadas" calculados desde órdenes pagadas
+      // NO desde salary_settlements (esos son solo los registrados manualmente)
+      
+      // Obtener todos los técnicos de todas las sucursales
+      const { data: allTechnicians } = await supabase
+        .from("users")
+        .select("id")
+        .eq("role", "technician");
 
-      const total_pagos_tecnicos = (technicianSettlements || []).reduce(
-        (sum, settlement) => sum + (settlement.total_amount || 0),
-        0
-      );
+      const technicianIds = (allTechnicians || []).map((u) => u.id);
+      let total_pagos_tecnicos = 0;
+      if (technicianIds.length > 0) {
+        // Calcular desde órdenes pagadas en el rango de fechas
+        // Usar funciones helper para evitar problemas de zona horaria
+        const startUTC = dateStringToUTCStart(start);
+        const endUTC = dateStringToUTCEnd(end);
+        
+        // Buscar órdenes pagadas con recibo en el rango (igual que el historial)
+        const { data: paidOrders, error: ordersError } = await supabase
+          .from("orders")
+          .select("commission_amount, technician_id, paid_at, created_at")
+          .eq("status", "paid")
+          .not("receipt_number", "is", null)
+          .in("technician_id", technicianIds)
+          .or(`and(paid_at.gte.${startUTC.toISOString()},paid_at.lte.${endUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
 
-      // Pagos a encargados (de salary_settlements) - filtrado por created_at del mes
-      const { data: encargadoSettlements } = await supabase
-        .from("salary_settlements")
-        .select("total_amount, created_at")
-        .eq("user_role", "encargado")
-        .gte("created_at", start + "T00:00:00")
-        .lte("created_at", end + "T23:59:59");
+        if (ordersError) {
+          console.error("Error cargando órdenes pagadas para calcular pagos técnicos:", ordersError);
+        }
 
-      const total_pagos_encargados = (encargadoSettlements || []).reduce(
-        (sum, settlement) => sum + (settlement.total_amount || 0),
-        0
-      );
+        // Sumar comisiones de todas las órdenes pagadas (esto es lo que se debe/pagó a técnicos)
+        total_pagos_tecnicos = (paidOrders || []).reduce(
+          (sum, order) => sum + (order.commission_amount || 0),
+          0
+        );
+
+        console.log(`[BranchExpensesPage] Pagos técnicos global (calculado desde órdenes):`, {
+          start,
+          end,
+          startUTC: startUTC.toISOString(),
+          endUTC: endUTC.toISOString(),
+          technicianIds: technicianIds.length,
+          paidOrdersCount: paidOrders?.length || 0,
+          total: total_pagos_tecnicos
+        });
+      }
+
+      // Pagos a encargados (de salary_settlements) - filtrado por fecha seleccionada
+      const { data: allEncargados } = await supabase
+        .from("users")
+        .select("id")
+        .eq("role", "encargado");
+
+      const encargadoIds = (allEncargados || []).map((u) => u.id);
+      let total_pagos_encargados = 0;
+      if (encargadoIds.length > 0) {
+        // Usar funciones helper para evitar problemas de zona horaria
+        const startUTC = dateStringToUTCStart(start);
+        const endUTC = dateStringToUTCEnd(end);
+        const { data: settlements } = await supabase
+          .from("salary_settlements")
+          .select("amount, week_start, created_at")
+          .in("technician_id", encargadoIds)
+          .gte("created_at", startUTC.toISOString())
+          .lte("created_at", endUTC.toISOString());
+
+        total_pagos_encargados = (settlements || []).reduce(
+          (sum, s) => sum + (s.amount || 0),
+          0
+        );
+      }
 
       setGlobalSummary({
         total_small_expenses,
@@ -260,7 +321,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
         0
       );
 
-      // Pagos a técnicos de la sucursal - filtrado por created_at del mes
+      // Pagos a técnicos de la sucursal - CALCULADO DESDE ÓRDENES PAGADAS
       const { data: branchTechnicians } = await supabase
         .from("users")
         .select("id")
@@ -270,20 +331,42 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
       const technicianIds = (branchTechnicians || []).map((u) => u.id);
       let total_pagos_tecnicos = 0;
       if (technicianIds.length > 0) {
-        const { data: settlements } = await supabase
-          .from("salary_settlements")
-          .select("total_amount, created_at")
-          .in("user_id", technicianIds)
-          .gte("created_at", start + "T00:00:00")
-          .lte("created_at", end + "T23:59:59");
+        // Calcular desde órdenes pagadas en el rango de fechas
+        // Usar funciones helper para evitar problemas de zona horaria
+        const startUTC = dateStringToUTCStart(start);
+        const endUTC = dateStringToUTCEnd(end);
+        
+        // Buscar órdenes pagadas con recibo de técnicos de esta sucursal
+        const { data: paidOrders, error: ordersError } = await supabase
+          .from("orders")
+          .select("commission_amount, technician_id, paid_at, created_at")
+          .eq("status", "paid")
+          .not("receipt_number", "is", null)
+          .in("technician_id", technicianIds)
+          .or(`and(paid_at.gte.${startUTC.toISOString()},paid_at.lte.${endUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
 
-        total_pagos_tecnicos = (settlements || []).reduce(
-          (sum, s) => sum + (s.total_amount || 0),
+        if (ordersError) {
+          console.error("Error cargando órdenes pagadas para calcular pagos técnicos de sucursal:", ordersError);
+        }
+
+        // Sumar comisiones de todas las órdenes pagadas
+        total_pagos_tecnicos = (paidOrders || []).reduce(
+          (sum, order) => sum + (order.commission_amount || 0),
           0
         );
+
+        console.log(`[BranchExpensesPage] Pagos técnicos sucursal ${branchId} (calculado desde órdenes):`, {
+          start,
+          end,
+          startUTC: startUTC.toISOString(),
+          endUTC: endUTC.toISOString(),
+          technicianIdsCount: technicianIds.length,
+          paidOrdersCount: paidOrders?.length || 0,
+          total: total_pagos_tecnicos
+        });
       }
 
-      // Pagos a encargados de la sucursal - filtrado por created_at del mes
+      // Pagos a encargados de la sucursal - filtrado por fecha seleccionada
       const { data: branchEncargados } = await supabase
         .from("users")
         .select("id")
@@ -293,15 +376,18 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
       const encargadoIds = (branchEncargados || []).map((u) => u.id);
       let total_pagos_encargados = 0;
       if (encargadoIds.length > 0) {
+        // Usar funciones helper para evitar problemas de zona horaria
+        const startUTC = dateStringToUTCStart(start);
+        const endUTC = dateStringToUTCEnd(end);
         const { data: settlements } = await supabase
           .from("salary_settlements")
-          .select("total_amount, created_at")
-          .in("user_id", encargadoIds)
-          .gte("created_at", start + "T00:00:00")
-          .lte("created_at", end + "T23:59:59");
+          .select("amount, week_start, created_at")
+          .in("technician_id", encargadoIds)
+          .gte("created_at", startUTC.toISOString())
+          .lte("created_at", endUTC.toISOString());
 
         total_pagos_encargados = (settlements || []).reduce(
-          (sum, s) => sum + (s.total_amount || 0),
+          (sum, s) => sum + (s.amount || 0),
           0
         );
       }
@@ -441,7 +527,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
       {userRole === "admin" && (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
           <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Resumen Global</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <KpiCard
               title="Total Gastos Hormiga"
               value={formatCLP(globalSummary.total_small_expenses)}
@@ -461,11 +547,6 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
               title="Total Pagos Técnicos"
               value={formatCLP(globalSummary.total_pagos_tecnicos)}
               icon="👨‍🔧"
-            />
-            <KpiCard
-              title="Total Pagos Encargados"
-              value={formatCLP(globalSummary.total_pagos_encargados)}
-              icon="👔"
             />
           </div>
         </div>
@@ -509,7 +590,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
           {loadingSummary ? (
             <p className="text-slate-600">Cargando...</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <KpiCard
                 title="Gastos Hormiga"
                 value={formatCLP(branchSummary.total_small_expenses)}
@@ -529,11 +610,6 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
                 title="Pagos Técnicos"
                 value={formatCLP(branchSummary.total_pagos_tecnicos)}
                 icon="👨‍🔧"
-              />
-              <KpiCard
-                title="Pagos Encargados"
-                value={formatCLP(branchSummary.total_pagos_encargados)}
-                icon="👔"
               />
             </div>
           )}

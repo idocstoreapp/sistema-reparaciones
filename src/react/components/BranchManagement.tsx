@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatCLP } from "@/lib/currency";
+import { currentMonthRange } from "@/lib/date";
 import type { Branch, BranchExpensesSummary } from "@/types";
 import SmallExpenses from "./SmallExpenses";
 import GeneralExpenses from "./GeneralExpenses";
@@ -96,16 +97,48 @@ export default function BranchManagement() {
 
       const total_repuestos = (orders || []).reduce((sum, order) => sum + (order.replacement_cost || 0), 0);
 
-      // Total pagos a técnicos (de salary_settlements)
-      const { data: settlements, error: settlementsError } = await supabase
-        .from("salary_settlements")
-        .select("amount, technician_id");
+      // Total pagos a técnicos - CALCULADO DESDE ÓRDENES PAGADAS (igual que el historial)
+      const { start: monthStart, end: monthEnd } = currentMonthRange();
+      const startISO = monthStart.toISOString().slice(0, 10);
+      const endISO = monthEnd.toISOString().slice(0, 10);
+      
+      // Obtener todos los técnicos
+      const { data: allTechnicians } = await supabase
+        .from("users")
+        .select("id")
+        .eq("role", "technician");
 
-      if (settlementsError) {
-        console.error("Error cargando liquidaciones:", settlementsError);
+      const technicianIds = (allTechnicians || []).map((u) => u.id);
+      let total_pagos_tecnicos = 0;
+      if (technicianIds.length > 0) {
+        // Calcular desde órdenes pagadas en el mes actual
+        const startUTC = new Date(Date.UTC(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate(), 0, 0, 0, 0));
+        const endUTC = new Date(Date.UTC(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate(), 23, 59, 59, 999));
+        
+        // Buscar órdenes pagadas con recibo en el mes (igual que el historial)
+        const { data: paidOrders, error: ordersError } = await supabase
+          .from("orders")
+          .select("commission_amount, technician_id, paid_at, created_at")
+          .eq("status", "paid")
+          .not("receipt_number", "is", null)
+          .in("technician_id", technicianIds)
+          .or(`and(paid_at.gte.${startUTC.toISOString()},paid_at.lte.${endUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
+
+        if (ordersError) {
+          console.error("Error cargando órdenes pagadas:", ordersError);
+        }
+
+        // Sumar comisiones de todas las órdenes pagadas
+        total_pagos_tecnicos = (paidOrders || []).reduce((sum, order) => sum + (order.commission_amount || 0), 0);
+
+        console.log(`[BranchManagement] Pagos técnicos global (calculado desde órdenes):`, {
+          startISO,
+          endISO,
+          technicianIds: technicianIds.length,
+          paidOrdersCount: paidOrders?.length || 0,
+          total: total_pagos_tecnicos
+        });
       }
-
-      const total_pagos_tecnicos = (settlements || []).reduce((sum, settlement) => sum + (settlement.amount || 0), 0);
 
       // Total pagos a encargados (asumiendo que también están en salary_settlements o users con role encargado)
       // Por ahora, lo dejamos en 0 o puedes agregar lógica específica
@@ -177,7 +210,11 @@ export default function BranchManagement() {
 
       const total_repuestos = (orders || []).reduce((sum, order) => sum + (order.replacement_cost || 0), 0);
 
-      // Pagos a técnicos de la sucursal
+      // Pagos a técnicos de la sucursal - CALCULADO DESDE ÓRDENES PAGADAS
+      const { start: monthStart, end: monthEnd } = currentMonthRange();
+      const startISO = monthStart.toISOString().slice(0, 10);
+      const endISO = monthEnd.toISOString().slice(0, 10);
+      
       const { data: technicians } = await supabase
         .from("users")
         .select("id")
@@ -188,16 +225,33 @@ export default function BranchManagement() {
 
       let total_pagos_tecnicos = 0;
       if (technicianIds.length > 0) {
-        const { data: settlements, error: settlementsError } = await supabase
-          .from("salary_settlements")
-          .select("amount")
-          .in("technician_id", technicianIds);
+        // Calcular desde órdenes pagadas en el mes actual
+        const startUTC = new Date(Date.UTC(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate(), 0, 0, 0, 0));
+        const endUTC = new Date(Date.UTC(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate(), 23, 59, 59, 999));
+        
+        // Buscar órdenes pagadas con recibo de técnicos de esta sucursal
+        const { data: paidOrders, error: ordersError } = await supabase
+          .from("orders")
+          .select("commission_amount, technician_id, paid_at, created_at")
+          .eq("status", "paid")
+          .not("receipt_number", "is", null)
+          .in("technician_id", technicianIds)
+          .or(`and(paid_at.gte.${startUTC.toISOString()},paid_at.lte.${endUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${startUTC.toISOString()},created_at.lte.${endUTC.toISOString()})`);
 
-        if (settlementsError) {
-          console.error(`Error cargando liquidaciones de técnicos de sucursal ${branchId}:`, settlementsError);
+        if (ordersError) {
+          console.error(`Error cargando órdenes pagadas de técnicos de sucursal ${branchId}:`, ordersError);
         }
 
-        total_pagos_tecnicos = (settlements || []).reduce((sum, settlement) => sum + (settlement.amount || 0), 0);
+        // Sumar comisiones de todas las órdenes pagadas
+        total_pagos_tecnicos = (paidOrders || []).reduce((sum, order) => sum + (order.commission_amount || 0), 0);
+
+        console.log(`[BranchManagement] Pagos técnicos sucursal ${branchId} (calculado desde órdenes):`, {
+          startISO,
+          endISO,
+          technicianIdsCount: technicianIds.length,
+          paidOrdersCount: paidOrders?.length || 0,
+          total: total_pagos_tecnicos
+        });
       }
 
       // Pagos a encargados de la sucursal
@@ -210,8 +264,8 @@ export default function BranchManagement() {
         total_general_expenses,
         total_repuestos,
         total_pagos_tecnicos,
-        total_pagos_encargados,
-        total_general: total_small_expenses + total_general_expenses + total_repuestos + total_pagos_tecnicos + total_pagos_encargados,
+        total_pagos_encargados: 0, // No implementado aún
+        total_general: total_small_expenses + total_general_expenses + total_repuestos + total_pagos_tecnicos,
       });
     } catch (err) {
       console.error("Error cargando resumen de sucursal:", err);
@@ -233,7 +287,7 @@ export default function BranchManagement() {
       {/* KPIs Globales */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-bold text-slate-900 mb-4">Resumen Global de Gastos</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
             title="Total Gastos Hormiga"
             value={formatCLP(globalSummary.total_small_expenses)}
@@ -254,11 +308,6 @@ export default function BranchManagement() {
             value={formatCLP(globalSummary.total_pagos_tecnicos)}
             icon="👷"
           />
-          <KpiCard
-            title="Total Pagos Encargados"
-            value={formatCLP(globalSummary.total_pagos_encargados)}
-            icon="👔"
-          />
         </div>
         <div className="mt-4 pt-4 border-t border-slate-200">
           <div className="flex justify-between items-center">
@@ -268,8 +317,7 @@ export default function BranchManagement() {
                 globalSummary.total_small_expenses +
                 globalSummary.total_general_expenses +
                 globalSummary.total_repuestos +
-                globalSummary.total_pagos_tecnicos +
-                globalSummary.total_pagos_encargados
+                globalSummary.total_pagos_tecnicos
               )}
             </span>
           </div>
@@ -304,7 +352,7 @@ export default function BranchManagement() {
             {loadingSummary ? (
               <p className="text-slate-600">Cargando resumen...</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KpiCard
                   title="Gastos Hormiga"
                   value={formatCLP(branchSummary.total_small_expenses)}
@@ -324,11 +372,6 @@ export default function BranchManagement() {
                   title="Pagos Técnicos"
                   value={formatCLP(branchSummary.total_pagos_tecnicos)}
                   icon="👷"
-                />
-                <KpiCard
-                  title="Pagos Encargados"
-                  value={formatCLP(branchSummary.total_pagos_encargados)}
-                  icon="👔"
                 />
               </div>
             )}

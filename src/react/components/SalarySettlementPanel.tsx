@@ -70,18 +70,14 @@ export default function SalarySettlementPanel({
 
     async function fetchAdjustments(includeApplications: boolean) {
       const selectClause = includeApplications
-        ? "*, applications:salary_adjustment_applications(applied_amount)"
+        ? "*, applications:salary_adjustment_applications(applied_amount, week_start)"
         : "*";
-      let query = supabase
+      // Cargar TODOS los ajustes sin filtrar por fecha
+      // El filtrado se hará después basándose en las aplicaciones (remaining > 0)
+      const query = supabase
         .from("salary_adjustments")
         .select(selectClause)
         .eq("technician_id", technicianId);
-      
-      // Si hay liquidación, solo cargar ajustes creados DESPUÉS de la liquidación
-      // Los ajustes ya liquidadas no deben aparecer
-      if (lastSettlementDate) {
-        query = query.gte("created_at", lastSettlementDate.toISOString());
-      }
       
       return await query.order("created_at", { ascending: false });
     }
@@ -113,6 +109,16 @@ export default function SalarySettlementPanel({
         applications?: SalaryAdjustmentApplication[];
       })[];
 
+    console.log("📊 [SalarySettlementPanel] Cargando ajustes:", {
+      totalAjustes: adjustmentsData.length,
+      applicationsSupported,
+      primerAjuste: adjustmentsData[0] ? {
+        id: adjustmentsData[0].id,
+        amount: adjustmentsData[0].amount,
+        applications: (adjustmentsData[0] as any)?.applications
+      } : null
+    });
+
     const normalized: AdjustmentWithPending[] = adjustmentsData
       .map((adj) => {
         const applications = (adj as any)?.applications ?? [];
@@ -124,6 +130,14 @@ export default function SalarySettlementPanel({
               ) ?? 0
             : 0;
         const remaining = Math.max((adj.amount ?? 0) - appliedTotal, 0);
+        
+        // Log para debugging - mostrar TODOS los ajustes con aplicaciones
+        if (appliedTotal > 0) {
+          console.log(`🔍 Ajuste ${adj.id}: monto=${adj.amount}, aplicado=${appliedTotal}, restante=${remaining}`, {
+            applications: applications.length,
+            aplicaciones: applications
+          });
+        }
         const createdDate = new Date(adj.created_at);
         const availableFromDate = adj.available_from
           ? new Date(adj.available_from)
@@ -445,15 +459,29 @@ export default function SalarySettlementPanel({
       return acc;
     }, {});
 
+    const { data: userData } = await supabase.auth.getUser();
+
     if (applicationsSupported && entriesToApply.length > 0) {
       const payload = entriesToApply.map((entry) => ({
         ...entry,
         week_start: weekStartISO,
+        created_by: userData?.user?.id ?? null,
       }));
-      const { error } = await supabase.from("salary_adjustment_applications").insert(payload);
+      
+      console.log("Guardando aplicaciones de ajustes:", payload);
+      const { error, data } = await supabase
+        .from("salary_adjustment_applications")
+        .insert(payload)
+        .select();
+      
+      if (data) {
+        console.log("✅ Aplicaciones de ajustes guardadas correctamente:", data);
+        console.log("Total aplicaciones guardadas:", data.length);
+      }
 
       if (error) {
-        console.error("Error registrando liquidación:", error);
+        console.error("❌ ERROR guardando aplicaciones de ajustes:", error);
+        console.error("Detalles del error:", JSON.stringify(error, null, 2));
         const msg = error.message?.toLowerCase() ?? "";
         if (msg.includes("salary_adjustment_applications") || msg.includes("does not exist")) {
           setApplicationsSupported(false);
@@ -537,8 +565,6 @@ export default function SalarySettlementPanel({
       }),
     };
 
-    const { data: userData } = await supabase.auth.getUser();
-    
     const settlementData = {
       technician_id: technicianId,
       week_start: weekStartISO,
