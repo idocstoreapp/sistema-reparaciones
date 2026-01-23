@@ -47,6 +47,16 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
     loadData();
   }, [sucursalId, refreshKey, dateFilter, showAllHistory, localDateFilter]);
 
+  // Sincronizar formData.sucursal_id con sucursalId cuando cambia (solo si no estamos editando)
+  useEffect(() => {
+    if (sucursalId && !editingExpense) {
+      setFormData(prev => ({
+        ...prev,
+        sucursal_id: sucursalId
+      }));
+    }
+  }, [sucursalId, editingExpense]);
+
   async function loadData() {
     setLoading(true);
     try {
@@ -323,7 +333,16 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
             {showAllHistory ? "📅 Ver Filtrado" : "📋 Ver Todo el Historial"}
           </button>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              if (!showForm) {
+                // Al abrir el formulario, asegurar que sucursal_id esté sincronizado
+                setFormData(prev => ({
+                  ...prev,
+                  sucursal_id: sucursalId || prev.sucursal_id
+                }));
+              }
+              setShowForm(!showForm);
+            }}
             className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium"
           >
             {showForm ? "Cancelar" : "+ Nuevo Gasto"}
@@ -411,25 +430,38 @@ export default function GeneralExpenses({ sucursalId, refreshKey = 0, dateFilter
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Sucursal *
-              </label>
-              <select
-                value={formData.sucursal_id}
-                onChange={(e) => setFormData({ ...formData, sucursal_id: e.target.value })}
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                required
-                disabled={!!sucursalId}
-              >
-                <option value="">Selecciona una sucursal</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!sucursalId ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Sucursal *
+                </label>
+                <select
+                  value={formData.sucursal_id}
+                  onChange={(e) => setFormData({ ...formData, sucursal_id: e.target.value })}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  required
+                >
+                  <option value="">Selecciona una sucursal</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Sucursal
+                </label>
+                <div className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-100 text-slate-700">
+                  {branches.find(b => b.id === sucursalId)?.name || "Sucursal seleccionada"}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  La sucursal está determinada por la selección en la parte superior
+                </p>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Tipo de Gasto *
