@@ -13,6 +13,7 @@ import AdminReports from "./components/AdminReports";
 import SupplierPurchases from "./components/SupplierPurchases";
 import UserManagement from "./components/UserManagement";
 import TechnicianPayments from "./components/TechnicianPayments";
+import MetricsPage from "./components/MetricsPage";
 import Footer from "./components/Footer";
 
 // Componente helper para órdenes del encargado
@@ -343,6 +344,20 @@ export default function Dashboard() {
         return (
           <BranchExpensesPage userRole={me.role} />
         );
+      case "metrics":
+        return me.role === "admin" ? (
+          <div className="space-y-4 sm:space-y-6">
+            <div className="mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+                Métricas y Análisis
+              </h1>
+              <p className="text-sm sm:text-base text-slate-600">
+                Compara métricas de ventas por sucursal o técnico en diferentes períodos
+              </p>
+            </div>
+            <MetricsPage />
+          </div>
+        ) : null;
       default:
         return null;
     }

@@ -71,3 +71,19 @@ export function dateToUTCEnd(date: Date): Date {
   ));
 }
 
+/**
+ * Calcula el rango de la semana laboral (sábado a viernes) desde un week_start
+ * @param weekStart - Fecha de inicio de semana (sábado) en formato Date o string
+ * @returns Objeto con start (sábado) y end (viernes) de la semana
+ */
+export function getWeekRangeFromStart(weekStart: Date | string): { start: Date; end: Date } {
+  const startDate = typeof weekStart === 'string' ? new Date(weekStart) : weekStart;
+  startDate.setHours(0, 0, 0, 0);
+  
+  // El fin es el viernes siguiente (6 días después del sábado)
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 6);
+  endDate.setHours(23, 59, 59, 999);
+  
+  return { start: startDate, end: endDate };
+}

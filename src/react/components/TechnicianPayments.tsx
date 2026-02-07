@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, formatDate, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
+import { currentWeekRange, formatDate, dateToUTCStart, dateToUTCEnd, getWeekRangeFromStart } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, SalaryAdjustment, Order, SalarySettlement, Role } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
+import WeeklyReport from "./WeeklyReport";
+import WeeklySummary from "./WeeklySummary";
+import OrdersTable from "./OrdersTable";
 
 interface TechnicianPaymentsProps {
   refreshKey?: number;
@@ -53,6 +56,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
     transferencia: 0,
     efectivo_transferencia: 0,
   });
+  const [techModalOpen, setTechModalOpen] = useState<string | null>(null);
   const technicianNameMap = useMemo(
     () =>
       technicians.reduce<Record<string, string>>((acc, tech) => {
@@ -217,17 +221,13 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         const uniqueOrders2 = orders2.filter(o => o.id && !orderIds.has(o.id));
         const allOrders = [...orders1, ...uniqueOrders2];
 
-        // Consulta para ajustes - excluir los liquidadas
+        // Consulta para ajustes - CORREGIDO: Cargar TODOS los ajustes y filtrar por remaining > 0
         // IMPORTANTE: Incluir aplicaciones para calcular el saldo restante correctamente
-        let adjustmentsQuery = supabase
+        // NO filtrar por fecha de creación, solo por saldo pendiente
+        const adjustmentsQuery = supabase
           .from("salary_adjustments")
           .select("amount, available_from, created_at, id, type, note, applications:salary_adjustment_applications(applied_amount)")
           .eq("technician_id", tech.id);
-        
-        if (lastSettlementDate) {
-          // Solo ajustes creados después de la liquidación
-          adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
-        }
 
         // Consulta para devoluciones - excluir las liquidadas
         let returnsQuery = supabase
@@ -266,27 +266,20 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             .select("amount, available_from, created_at, id, type, note")
             .eq("technician_id", tech.id);
           
-          if (lastSettlementDate) {
-            adjustmentsWithApplications = adjustmentsWithoutApps?.filter(adj => 
-              new Date(adj.created_at) >= lastSettlementDate
-            ) || [];
-          } else {
-            adjustmentsWithApplications = adjustmentsWithoutApps || [];
-          }
+          // Agregar aplicaciones vacías para mantener la estructura
+          adjustmentsWithApplications = (adjustmentsWithoutApps || []).map((adj: any) => ({
+            ...adj,
+            applications: [] // Agregar aplicaciones vacías
+          }));
         }
 
         // Usar allOrders que ya fue calculado arriba (combinación de ambas consultas)
         totals[tech.id] = allOrders.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
         
-        // Calcular total de ajustes disponibles RESTANDO las aplicaciones ya hechas
+        // CORREGIDO: Calcular total de ajustes disponibles RESTANDO las aplicaciones ya hechas
+        // Filtrar solo por remaining > 0, NO por fecha de creación
         const adjustmentsForWeek = (adjustmentsWithApplications || [])
-          .filter((adj: any) => {
-            const availableFrom = adj.available_from
-              ? new Date(adj.available_from)
-              : new Date(adj.created_at);
-            return availableFrom <= end;
-          })
-          .reduce((sum: number, adj: any) => {
+          .map((adj: any) => {
             // Calcular aplicaciones totales para este ajuste
             const applications = adj.applications || [];
             const appliedTotal = applications.reduce(
@@ -295,8 +288,22 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             );
             // Restar aplicaciones del monto total para obtener el saldo restante
             const remaining = Math.max((adj.amount || 0) - appliedTotal, 0);
-            return sum + remaining;
-          }, 0);
+            return {
+              ...adj,
+              remaining,
+              appliedTotal
+            };
+          })
+          .filter((adj: any) => {
+            // Solo incluir ajustes con saldo pendiente
+            if (adj.remaining <= 0) return false;
+            // Verificar disponibilidad por fecha
+            const availableFrom = adj.available_from
+              ? new Date(adj.available_from)
+              : new Date(adj.created_at);
+            return availableFrom <= end;
+          })
+          .reduce((sum: number, adj: any) => sum + adj.remaining, 0);
 
         adjustmentTotals[tech.id] = adjustmentsForWeek;
         returnsTotals[tech.id] =
@@ -497,23 +504,11 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             
             console.log(`🔍 Técnico ${techId}: Se encontraron ${paidOrders.length} órdenes pagadas${hasDateFilters ? ` en el rango ${filters.startDate} al ${filters.endDate}` : ' (todas)'}`);
             
-            // Si hay filtros de fecha, calcular total del rango completo
-            // Si NO hay filtros de fecha, agrupar por semana para mostrar el historial completo
-            let totalRangeAmount = 0;
-            let totalRangeOrders = 0;
-            if (hasDateFilters) {
-              // Calcular total del rango completo cuando hay filtros de fecha
-              paidOrders.forEach((order: any) => {
-                const commission = order.commission_amount || 0;
-                if (commission > 0) {
-                  totalRangeAmount += commission;
-                  totalRangeOrders += 1;
-                }
-              });
-              console.log(`💰 Total del rango: ${totalRangeOrders} órdenes = ${totalRangeAmount.toLocaleString('es-CL')} CLP`);
-            }
+            // CORREGIDO: Cuando hay filtros de fecha, mostrar TODOS los pagos individuales registrados
+            // NO crear resúmenes totales, mostrar cada pago semana por semana con su fecha
+            // Solo agregar liquidaciones automáticas para semanas que NO tienen liquidación registrada
             
-            // Agrupar por semana (week_start) para mantener compatibilidad
+            // Agrupar por semana (week_start) para mostrar pagos individuales
             const weeksMap = new Map<string, { orders: any[], total: number }>();
             
             paidOrders.forEach(order => {
@@ -550,47 +545,6 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                 weekData.total += order.commission_amount || 0;
               }
             });
-            
-            // Si hay filtros de fecha y hay órdenes en el rango, SIEMPRE agregar resumen total del rango completo
-            // Esto mostrará el total exacto de las órdenes del rango, no agrupado por semana
-            if (hasDateFilters && totalRangeAmount > 0) {
-              const rangeStartDate = filters.startDate!;
-              const rangeEndDate = filters.endDate!;
-              
-              console.log(`📊 [${techId}] Calculando liquidación del ${rangeStartDate} al ${rangeEndDate}`);
-              console.log(`   📦 Órdenes encontradas: ${paidOrders.length}`);
-              console.log(`   💰 Total comisión: ${totalRangeAmount.toLocaleString('es-CL')} CLP`);
-              console.log(`   📋 Órdenes con comisión: ${totalRangeOrders}`);
-              
-              // SIEMPRE crear la liquidación automática del rango completo cuando hay filtros de fecha
-              // No verificar si existe una registrada, porque queremos mostrar el cálculo automático del rango
-              const rangeSettlement: SalarySettlement = {
-                id: `auto-range-${techId}-${rangeStartDate}-${rangeEndDate}`,
-                technician_id: techId,
-                week_start: rangeStartDate, // Usar fecha inicio como referencia
-                amount: totalRangeAmount,
-                note: `Calculado automáticamente de ${totalRangeOrders} órdenes pagadas del ${rangeStartDate} al ${rangeEndDate}`,
-                context: "admin" as const,
-                payment_method: null,
-                details: {
-                  auto_generated: true,
-                  auto_range: true,
-                  orders_count: totalRangeOrders,
-                  orders_ids: paidOrders.map((o: any) => o.id),
-                  range_start: rangeStartDate,
-                  range_end: rangeEndDate,
-                },
-                created_by: null,
-                created_at: paidOrders.length > 0 
-                  ? paidOrders[paidOrders.length - 1]?.created_at || new Date().toISOString()
-                  : new Date().toISOString(),
-              };
-              
-              console.log(`✅ [${techId}] Creando liquidación automática del rango completo:`, rangeSettlement);
-              autoSettlements.push(rangeSettlement);
-            } else if (hasDateFilters && totalRangeAmount === 0) {
-              console.log(`⚠️ [${techId}] No hay órdenes pagadas en el rango ${filters.startDate} al ${filters.endDate}`);
-            }
             
             // Para cada semana con órdenes pagadas, verificar si ya existe una liquidación registrada
             for (const [weekStart, weekData] of weeksMap.entries()) {
@@ -634,23 +588,15 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           }
         }
         
-            // Si hay filtros de fecha, priorizar mostrar el resumen total del rango completo
-            // Si NO hay filtros de fecha, mostrar todas las liquidaciones agrupadas por semana
-            const hasDateFilters = filters.startDate && filters.endDate && filters.startDate.trim() !== "" && filters.endDate.trim() !== "";
-            
-            // Separar liquidaciones de rango completo de las agrupadas por semana
-            const rangeSettlements = autoSettlements.filter(s => (s.details as any)?.auto_range);
-            const weekSettlements = autoSettlements.filter(s => !(s.details as any)?.auto_range);
-            
-            console.log(`🔍 Separando liquidaciones automáticas:`);
-            console.log(`   - Rango completo: ${rangeSettlements.length}`);
-            console.log(`   - Por semana: ${weekSettlements.length}`);
-            console.log(`   - Total automáticas: ${autoSettlements.length}`);
-            console.log(`   - Filtros de fecha activos: ${hasDateFilters ? 'Sí' : 'No'}`);
-            
-            // Si hay filtros de fecha, mostrar solo liquidaciones de rango completo + las registradas
-            // Si NO hay filtros de fecha, mostrar TODO (registradas + automáticas por semana) para ver el historial completo
-            let finalAutoSettlements = hasDateFilters ? rangeSettlements : autoSettlements;
+        // CORREGIDO: Cuando hay filtros de fecha, mostrar TODOS los pagos individuales registrados
+        // NO crear resúmenes totales, mostrar cada pago con su fecha
+        const hasDateFilters = filters.startDate && filters.endDate && filters.startDate.trim() !== "" && filters.endDate.trim() !== "";
+        
+        // Cuando hay filtros de fecha, mostrar SOLO los pagos registrados individuales
+        // NO mostrar liquidaciones automáticas de rango completo
+        let finalAutoSettlements = hasDateFilters 
+          ? autoSettlements.filter(s => !(s.details as any)?.auto_range) // Solo automáticas por semana, NO resúmenes
+          : autoSettlements; // Sin filtros: mostrar todas
         
         console.log(`📋 Liquidaciones automáticas finales a mostrar: ${finalAutoSettlements.length}`);
         if (finalAutoSettlements.length > 0) {
@@ -693,8 +639,6 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         console.log("=== RESULTADOS ===");
         console.log("Liquidaciones registradas (total):", list.length);
         console.log("Liquidaciones registradas (filtradas):", filteredList.length);
-        console.log("Liquidaciones automáticas (rango completo):", rangeSettlements.length);
-        console.log("Liquidaciones automáticas (por semana):", weekSettlements.length);
         console.log("Liquidaciones automáticas (finales):", finalAutoSettlements.length);
         console.log("Total liquidaciones a mostrar:", combinedList.length);
         console.log("=== DETALLE LIQUIDACIONES ===");
@@ -1120,36 +1064,65 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                               <span className="ml-2 text-xs text-blue-600 font-normal">(Auto-generada)</span>
                             )}
                           </p>
-                          <p className="text-xs text-slate-500">
-                            {(entry.details as any)?.auto_range ? (
-                              <>
-                                Rango: {formatDate((entry.details as any).range_start)} al {formatDate((entry.details as any).range_end)}
-                                {entry.created_at && <> • {formatDate(entry.created_at)}</>}
-                              </>
-                            ) : (
-                              <>
-                            Semana {formatDate(entry.week_start)} • Medio: {paymentMethodLabel}
-                                {entry.created_at && (
-                                  <> • {formatDate(entry.created_at)}</>
-                                )}
-                              </>
+                          <div className="text-xs text-slate-500 space-y-1">
+                            {/* Fecha del pago - SIEMPRE mostrar primero */}
+                            {entry.created_at && (
+                              <p className="font-medium text-slate-700">
+                                📅 Fecha del pago: {formatDate(entry.created_at)} • {new Date(entry.created_at).toLocaleTimeString("es-CL", {
+                                  hour: "2-digit",
+                                  minute: "2-digit"
+                                })}
+                              </p>
                             )}
+                            
+                            {/* Información de la semana y medio de pago */}
+                            {!(entry.details as any)?.auto_range && entry.week_start && (
+                              <p>
+                                📆 Período: {(() => {
+                                  try {
+                                    const weekRange = getWeekRangeFromStart(entry.week_start);
+                                    return `${formatDate(weekRange.start)} al ${formatDate(weekRange.end)}`;
+                                  } catch (e) {
+                                    return `${formatDate(entry.week_start)}`;
+                                  }
+                                })()} • 💳 Medio: {paymentMethodLabel}
+                              </p>
+                            )}
+                            
+                            {/* Si es resumen de rango (no debería aparecer con la corrección, pero por si acaso) */}
+                            {(entry.details as any)?.auto_range && (
+                              <p className="text-amber-600">
+                                ⚠️ Resumen del rango: {formatDate((entry.details as any).range_start)} al {formatDate((entry.details as any).range_end)}
+                              </p>
+                            )}
+                            
+                            {/* Nota si es auto-generada */}
                             {(entry.details as any)?.auto_generated && entry.note && (
-                              <><br/><span className="text-blue-600">{entry.note}</span></>
+                              <p className="text-blue-600">
+                                ℹ️ {entry.note}
+                              </p>
                             )}
+                            
+                            {/* Desglose de pago mixto */}
                             {isMixedPayment && (
-                              <>
-                                <br/>
-                                <span className="text-xs text-emerald-600">
-                                  Efectivo: {formatCLP(paymentBreakdown.efectivo || 0)}
+                              <p>
+                                <span className="text-emerald-600">
+                                  💵 Efectivo: {formatCLP(paymentBreakdown.efectivo || 0)}
                                 </span>
                                 {" • "}
-                                <span className="text-xs text-sky-600">
-                                  Transferencia: {formatCLP(paymentBreakdown.transferencia || 0)}
+                                <span className="text-sky-600">
+                                  🏦 Transferencia: {formatCLP(paymentBreakdown.transferencia || 0)}
                                 </span>
-                              </>
+                              </p>
                             )}
-                          </p>
+                            
+                            {/* Detalles adicionales del pago */}
+                            {(entry.details as any)?.adjustments && Array.isArray((entry.details as any).adjustments) && (entry.details as any).adjustments.length > 0 && (
+                              <p className="text-xs text-slate-400">
+                                Ajustes aplicados: {(entry.details as any).adjustments.length}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <span className="font-semibold text-brand">{formatCLP(entry.amount)}</span>
                       </div>
@@ -1190,10 +1163,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                   : "border-slate-200 hover:border-slate-300"
               }`}
               onClick={() => {
-                const nextSelected = isSelected ? null : tech.id;
-                setSelectedTech(nextSelected);
-                void loadWeeklyData();
-                void loadAdjustmentsForTech(tech.id, true);
+                setTechModalOpen(tech.id);
               }}
             >
               <div className="flex justify-between items-center">
@@ -1426,6 +1396,201 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           );
         })}
       </div>
+
+      {/* Modal de Vista del Técnico */}
+      {techModalOpen && (() => {
+        const tech = technicians.find(t => t.id === techModalOpen);
+        if (!tech) return null;
+        
+        return (
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setTechModalOpen(null)}
+          >
+            <div 
+              className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[95vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-10 shadow-sm">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900">{tech.name}</h2>
+                  <p className="text-sm text-slate-500">Vista completa del técnico</p>
+                </div>
+                <button
+                  onClick={() => setTechModalOpen(null)}
+                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                {/* KPIs del Técnico */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Resumen de la Semana</h3>
+                  <WeeklySummary technicianId={tech.id} refreshKey={refreshKey} />
+                </div>
+
+                {/* Reporte Semanal de Ganancias */}
+                <div>
+                  <WeeklyReport 
+                    technicianId={tech.id} 
+                    refreshKey={refreshKey}
+                    userRole="admin"
+                  />
+                </div>
+
+                {/* Historial de Pagos con Filtros */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Historial de Pagos</p>
+                      <p className="text-xs text-slate-500">Filtra los pagos realizados a este técnico por rango de fechas</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleHistoryPanel}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-white"
+                    >
+                      {historyPanelOpen ? "Ocultar historial" : "Mostrar historial"}
+                    </button>
+                  </div>
+
+                  {historyPanelOpen && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 mb-1 block">Desde</label>
+                          <input
+                            type="date"
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                            value={historyFilters.startDate}
+                            onChange={(e) =>
+                              setHistoryFilters((prev) => ({ ...prev, startDate: e.target.value, technicianId: tech.id }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 mb-1 block">Hasta</label>
+                          <input
+                            type="date"
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                            value={historyFilters.endDate}
+                            onChange={(e) =>
+                              setHistoryFilters((prev) => ({ ...prev, endDate: e.target.value, technicianId: tech.id }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryFilters((prev) => ({ ...prev, technicianId: tech.id }));
+                            handleManualHistorySearch();
+                          }}
+                          className="px-4 py-2 text-xs font-semibold rounded-md bg-brand-light text-white hover:bg-brand/90"
+                        >
+                          Buscar Pagos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetHistoryFilters}
+                          className="px-4 py-2 text-xs font-semibold rounded-md border border-slate-300 text-slate-600 hover:bg-white"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                      {historyError && <p className="text-xs text-red-600">{historyError}</p>}
+                      {historyLoading ? (
+                        <p className="text-sm text-slate-500">Cargando pagos...</p>
+                      ) : historyResults.length === 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-slate-500">No hay pagos para los filtros seleccionados.</p>
+                          <p className="text-xs text-slate-400">Intenta limpiar los filtros de fecha para ver todos los pagos.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {historyResults.map((entry) => {
+                            const paymentMethodLabel =
+                              entry.payment_method === "transferencia"
+                                ? "Transferencia"
+                                : entry.payment_method === "efectivo"
+                                ? "Efectivo"
+                                : entry.payment_method === "efectivo/transferencia"
+                                ? "Efectivo/Transferencia"
+                                : "Sin dato";
+                            const paymentBreakdown = (entry.details as any)?.payment_breakdown;
+                            const isMixedPayment = entry.payment_method === "efectivo/transferencia" && paymentBreakdown;
+                            
+                            return (
+                              <div
+                                key={entry.id}
+                                className="bg-white border border-slate-200 rounded-md p-3 text-sm"
+                              >
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="font-semibold text-slate-800">
+                                      {formatCLP(entry.amount)}
+                                      {(entry.details as any)?.auto_generated && (
+                                        <span className="ml-2 text-xs text-blue-600 font-normal">(Auto-generada)</span>
+                                      )}
+                                    </p>
+                                    <div className="text-xs text-slate-500 space-y-1">
+                                      {entry.created_at && (
+                                        <p className="font-medium text-slate-700">
+                                          📅 {formatDate(entry.created_at)} • {new Date(entry.created_at).toLocaleTimeString("es-CL", {
+                                            hour: "2-digit",
+                                            minute: "2-digit"
+                                          })}
+                                        </p>
+                                      )}
+                                      {!(entry.details as any)?.auto_range && entry.week_start && (
+                                        <p>
+                                          📆 Período: {(() => {
+                                            try {
+                                              const weekRange = getWeekRangeFromStart(entry.week_start);
+                                              return `${formatDate(weekRange.start)} al ${formatDate(weekRange.end)}`;
+                                            } catch (e) {
+                                              return `${formatDate(entry.week_start)}`;
+                                            }
+                                          })()} • 💳 {paymentMethodLabel}
+                                        </p>
+                                      )}
+                                      {isMixedPayment && (
+                                        <p className="text-purple-600">
+                                          💵 Efectivo: {formatCLP(paymentBreakdown.efectivo)} • 
+                                          💸 Transferencia: {formatCLP(paymentBreakdown.transferencia)}
+                                        </p>
+                                      )}
+                                      {entry.note && (
+                                        <p className="text-slate-600">📝 {entry.note}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Listado de Órdenes */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Órdenes de Reparación</h3>
+                  <OrdersTable 
+                    technicianId={tech.id} 
+                    refreshKey={refreshKey}
+                    isAdmin={true}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

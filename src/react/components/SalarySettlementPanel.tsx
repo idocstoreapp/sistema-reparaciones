@@ -30,6 +30,11 @@ export default function SalarySettlementPanel({
   onAfterSettlement,
 }: SalarySettlementPanelProps) {
   const [pendingAdjustments, setPendingAdjustments] = useState<AdjustmentWithPending[]>([]);
+  // Estado simplificado para selección de adelantos
+  const [selectedAdjustments, setSelectedAdjustments] = useState<Record<string, {
+    selected: boolean;
+    amount: number; // Monto a descontar (puede ser parcial)
+  }>>({});
   const [adjustmentDrafts, setAdjustmentDrafts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,7 +47,6 @@ export default function SalarySettlementPanel({
   const [cashAmount, setCashAmount] = useState(0);
   const [transferAmount, setTransferAmount] = useState(0);
   const [customAmountInput, setCustomAmountInput] = useState(0);
-  const [settlementType, setSettlementType] = useState<"total" | "partial">("total");
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
   const [returnsTotal, setReturnsTotal] = useState(0);
@@ -112,11 +116,20 @@ export default function SalarySettlementPanel({
     console.log("📊 [SalarySettlementPanel] Cargando ajustes:", {
       totalAjustes: adjustmentsData.length,
       applicationsSupported,
+      technicianId,
       primerAjuste: adjustmentsData[0] ? {
         id: adjustmentsData[0].id,
         amount: adjustmentsData[0].amount,
+        type: adjustmentsData[0].type,
         applications: (adjustmentsData[0] as any)?.applications
-      } : null
+      } : null,
+      todosLosAjustes: adjustmentsData.map(adj => ({
+        id: adj.id,
+        amount: adj.amount,
+        type: adj.type,
+        note: adj.note,
+        applications: (adj as any)?.applications || []
+      }))
     });
 
     const normalized: AdjustmentWithPending[] = adjustmentsData
@@ -131,19 +144,38 @@ export default function SalarySettlementPanel({
             : 0;
         const remaining = Math.max((adj.amount ?? 0) - appliedTotal, 0);
         
-        // Log para debugging - mostrar TODOS los ajustes con aplicaciones
-        if (appliedTotal > 0) {
-          console.log(`🔍 Ajuste ${adj.id}: monto=${adj.amount}, aplicado=${appliedTotal}, restante=${remaining}`, {
-            applications: applications.length,
-            aplicaciones: applications
-          });
-        }
+        // Calcular isAvailableThisWeek antes de usarlo
         const createdDate = new Date(adj.created_at);
         const availableFromDate = adj.available_from
           ? new Date(adj.available_from)
           : new Date(createdDate);
         availableFromDate.setHours(0, 0, 0, 0);
         const isAvailableThisWeek = availableFromDate <= weekEndDate;
+        
+        // Log para debugging - mostrar TODOS los ajustes con aplicaciones
+        console.log(`🔍 Ajuste ${adj.id}: monto=${adj.amount}, aplicado=${appliedTotal}, restante=${remaining}`, {
+          applications: applications.length,
+          aplicaciones: applications,
+          technician_id: adj.technician_id,
+          type: adj.type,
+          note: adj.note,
+          available_from: adj.available_from,
+          isAvailableThisWeek,
+          weekEndDate: weekEndDate.toISOString()
+        });
+        
+        // Log especial para adelantos de 100,000
+        if (adj.amount === 100000 && adj.type === 'advance') {
+          console.warn(`⚠️ ADELANTO DE 100,000 ENCONTRADO:`, {
+            id: adj.id,
+            amount: adj.amount,
+            appliedTotal,
+            remaining,
+            applications: applications,
+            willShow: remaining > 0 && isAvailableThisWeek,
+            willShowInSettled: remaining <= 0
+          });
+        }
         return {
           ...adj,
           appliedTotal,
@@ -152,8 +184,24 @@ export default function SalarySettlementPanel({
           isAvailableThisWeek,
           isCurrentWeek: createdDate >= weekStartDate && createdDate <= weekEndDate,
         };
-      })
-      .filter((adj) => adj.remaining > 0);
+      });
+      // CORREGIDO: Mostrar TODOS los ajustes, incluso los completamente aplicados
+      // Solo filtrar por remaining > 0 para mostrar en la sección de "pendientes"
+      // Pero permitir ver y eliminar todos los ajustes
+
+    // Inicializar selección de ajustes cuando se cargan
+    const newSelections: Record<string, { selected: boolean; amount: number }> = {};
+    normalized.forEach((adj) => {
+      if (!selectedAdjustments[adj.id]) {
+        newSelections[adj.id] = {
+          selected: false,
+          amount: adj.remaining, // Por defecto, el monto completo
+        };
+      }
+    });
+    if (Object.keys(newSelections).length > 0) {
+      setSelectedAdjustments((prev) => ({ ...prev, ...newSelections }));
+    }
 
     setPendingAdjustments(normalized);
     setAdjustmentDrafts((prev) => {
@@ -242,17 +290,23 @@ export default function SalarySettlementPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [technicianId]);
 
+  // Calcular total de ajustes seleccionados (usando nuevo sistema simplificado)
   const selectedAdjustmentsTotal = useMemo(
     () =>
       pendingAdjustments.reduce((sum, adj) => {
         if (!adj.isAvailableThisWeek) {
           return sum;
         }
+        const selection = selectedAdjustments[adj.id];
+        if (selection && selection.selected) {
+          return sum + Math.min(Math.max(selection.amount, 0), adj.remaining);
+        }
+        // Fallback al sistema anterior si no hay selección nueva
         const raw = adjustmentDrafts[adj.id];
-        const value = Number.isFinite(raw) ? raw : adj.remaining;
+        const value = Number.isFinite(raw) ? raw : 0;
         return sum + Math.min(Math.max(value ?? 0, 0), adj.remaining);
       }, 0),
-    [pendingAdjustments, adjustmentDrafts]
+    [pendingAdjustments, selectedAdjustments, adjustmentDrafts]
   );
 
   const availableAdjustments = useMemo(
@@ -280,18 +334,11 @@ export default function SalarySettlementPanel({
   const maxPayable = Math.max(baseAmount + deferredHoldback, grossAvailable);
   const netRemaining = Math.max(grossAvailable - (selectedAdjustmentsTotal + deferredHoldback), 0);
 
+  // Calcular monto a pagar automáticamente basado en selección de ajustes
   useEffect(() => {
-    if (settlementType === "total") {
-      // Si es ajuste total, establecer automáticamente al monto completo
-      const defaultAmount = Math.max(minPayable, Math.min(netRemaining, maxPayable));
-      setCustomAmountInput(defaultAmount);
-    } else {
-      // Si es ajuste parcial, mantener el monto actual o establecer a 0 si es la primera vez
-      if (customAmountInput === 0 || customAmountInput > netRemaining) {
-        setCustomAmountInput(0);
-      }
-    }
-  }, [minPayable, netRemaining, maxPayable, settlementType]);
+    const totalToPay = Math.max(0, grossAvailable - selectedAdjustmentsTotal - deferredHoldback);
+    setCustomAmountInput(totalToPay);
+  }, [grossAvailable, selectedAdjustmentsTotal, deferredHoldback]);
 
   // Calcular saldo restante después del pago
   const remainingBalance = useMemo(() => {
@@ -336,25 +383,57 @@ export default function SalarySettlementPanel({
     setAdjustmentDrafts(nextDrafts);
   }
 
-  function handleDraftChange(adjId: string, value: string) {
+  // Funciones simplificadas para manejar selección de ajustes
+  function handleToggleAdjustmentSelection(adjId: string) {
     const target = pendingAdjustments.find((adj) => adj.id === adjId);
     if (!target || !target.isAvailableThisWeek) return;
+    
+    setSelectedAdjustments((prev) => {
+      const current = prev[adjId];
+      return {
+        ...prev,
+        [adjId]: {
+          selected: !current?.selected,
+          amount: current?.selected ? 0 : target.remaining, // Si se deselecciona, poner 0; si se selecciona, poner el monto completo
+        },
+      };
+    });
+  }
+
+  function handleAdjustmentAmountChange(adjId: string, value: string) {
+    const target = pendingAdjustments.find((adj) => adj.id === adjId);
+    if (!target || !target.isAvailableThisWeek) return;
+    
     const numeric = Number(value);
-    if (Number.isNaN(numeric)) {
-      setAdjustmentDrafts((prev) => ({ ...prev, [adjId]: 0 }));
+    if (Number.isNaN(numeric) || numeric < 0) {
+      setSelectedAdjustments((prev) => ({
+        ...prev,
+        [adjId]: { ...prev[adjId], amount: 0 },
+      }));
       return;
     }
+    
     const clamped = Math.max(0, Math.min(numeric, target.remaining));
-    setAdjustmentDrafts((prev) => ({ ...prev, [adjId]: clamped }));
+    setSelectedAdjustments((prev) => ({
+      ...prev,
+      [adjId]: { ...prev[adjId], amount: clamped },
+    }));
+  }
+
+  // Mantener funciones antiguas para compatibilidad
+  function handleDraftChange(adjId: string, value: string) {
+    handleAdjustmentAmountChange(adjId, value);
   }
 
   function handleToggleAdjustment(adjId: string, enabled: boolean) {
-    const target = pendingAdjustments.find((adj) => adj.id === adjId);
-    if (!target || !target.isAvailableThisWeek) return;
-    setAdjustmentDrafts((prev) => ({
-      ...prev,
-      [adjId]: enabled ? target.remaining : 0,
-    }));
+    if (enabled) {
+      handleToggleAdjustmentSelection(adjId);
+    } else {
+      setSelectedAdjustments((prev) => ({
+        ...prev,
+        [adjId]: { ...prev[adjId], selected: false, amount: 0 },
+      }));
+    }
   }
 
   function formatAmount(amount: number) {
@@ -365,27 +444,63 @@ export default function SalarySettlementPanel({
   async function handleDeleteAdjustment(adjustmentId: string) {
     const target = pendingAdjustments.find((adj) => adj.id === adjustmentId);
     if (!target) {
+      console.error("❌ No se encontró el ajuste a eliminar:", adjustmentId);
+      setErrorMsg("No se encontró el ajuste a eliminar.");
       return;
     }
+    
     const confirmed = window.confirm(
-      `¿Eliminar este ajuste de sueldo (${target.type === "advance" ? "Adelanto" : "Descuento"} de ${formatAmount(target.amount ?? 0)})?`
+      `¿Eliminar este ajuste de sueldo (${target.type === "advance" ? "Adelanto" : "Descuento"} de ${formatAmount(target.amount ?? 0)})?\n\n` +
+      `Monto original: ${formatAmount(target.amount)}\n` +
+      `Aplicado: ${formatAmount(target.appliedTotal)}\n` +
+      `Restante: ${formatAmount(target.remaining)}\n\n` +
+      `Esta acción no se puede deshacer.`
     );
     if (!confirmed) {
       return;
     }
+    
     setErrorMsg(null);
     setDeletingAdjustmentId(adjustmentId);
-    const { error } = await supabase
+    
+    console.log("🗑️ Intentando eliminar ajuste:", {
+      adjustmentId,
+      technicianId,
+      amount: target.amount,
+      remaining: target.remaining
+    });
+    
+    const { data, error } = await supabase
       .from("salary_adjustments")
       .delete()
       .eq("id", adjustmentId)
-      .eq("technician_id", technicianId);
+      .eq("technician_id", technicianId)
+      .select(); // Seleccionar para verificar que se eliminó
+    
     setDeletingAdjustmentId(null);
+    
     if (error) {
-      console.error("Error eliminando ajuste:", error);
-      setErrorMsg("No pudimos eliminar el ajuste. Intenta nuevamente.");
+      console.error("❌ Error eliminando ajuste:", error);
+      console.error("Detalles del error:", JSON.stringify(error, null, 2));
+      
+      const errorMsg = error.message?.toLowerCase() || "";
+      if (errorMsg.includes("row-level security") || errorMsg.includes("policy")) {
+        setErrorMsg("❌ Error de permisos: No tienes permisos para eliminar este ajuste. Verifica que tengas rol de administrador.");
+      } else {
+        setErrorMsg(`❌ No pudimos eliminar el ajuste: ${error.message || "Error desconocido"}`);
+      }
       return;
     }
+    
+    if (data && data.length > 0) {
+      console.log("✅ Ajuste eliminado correctamente:", data);
+      setSuccessMsg(`✅ Ajuste eliminado correctamente.`);
+    } else {
+      console.warn("⚠️ No se recibió confirmación de eliminación, pero no hubo error");
+      setSuccessMsg(`⚠️ Ajuste posiblemente eliminado. Verifica en el listado.`);
+    }
+    
+    // Recargar ajustes
     await loadPendingAdjustments();
   }
 
@@ -438,22 +553,22 @@ export default function SalarySettlementPanel({
     setAdjustmentDrafts(draftsForSave);
     setCustomAmountInput(targetAmount);
 
-    const pendingEntries = pendingAdjustments.map((adj) => {
-      if (!adj.isAvailableThisWeek) {
+    // Usar nuevo sistema de selección de ajustes
+    const entriesToApply = pendingAdjustments
+      .filter((adj) => adj.isAvailableThisWeek)
+      .map((adj) => {
+        const selection = selectedAdjustments[adj.id];
+        if (selection && selection.selected && selection.amount > 0) {
+          return {
+            adjustment_id: adj.id,
+            technician_id: technicianId,
+            applied_amount: Math.min(selection.amount, adj.remaining),
+          };
+        }
         return null;
-      }
-      const raw = draftsForSave[adj.id];
-      const amountToApply = Math.min(Math.max(raw ?? 0, 0), adj.remaining);
-      return {
-        adjustment_id: adj.id,
-        technician_id: technicianId,
-        applied_amount: amountToApply,
-      };
-    });
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => !!entry && entry.applied_amount > 0);
 
-    const entriesToApply = pendingEntries.filter(
-      (entry): entry is NonNullable<typeof entry> => !!entry && entry.applied_amount > 0
-    );
     const appliedById = entriesToApply.reduce<Record<string, number>>((acc, entry) => {
       acc[entry.adjustment_id] = entry.applied_amount;
       return acc;
@@ -461,43 +576,11 @@ export default function SalarySettlementPanel({
 
     const { data: userData } = await supabase.auth.getUser();
 
-    if (applicationsSupported && entriesToApply.length > 0) {
-      const payload = entriesToApply.map((entry) => ({
-        ...entry,
-        week_start: weekStartISO,
-        created_by: userData?.user?.id ?? null,
-      }));
-      
-      console.log("Guardando aplicaciones de ajustes:", payload);
-      const { error, data } = await supabase
-        .from("salary_adjustment_applications")
-        .insert(payload)
-        .select();
-      
-      if (data) {
-        console.log("✅ Aplicaciones de ajustes guardadas correctamente:", data);
-        console.log("Total aplicaciones guardadas:", data.length);
-      }
-
-      if (error) {
-        console.error("❌ ERROR guardando aplicaciones de ajustes:", error);
-        console.error("Detalles del error:", JSON.stringify(error, null, 2));
-        const msg = error.message?.toLowerCase() ?? "";
-        if (msg.includes("salary_adjustment_applications") || msg.includes("does not exist")) {
-          setApplicationsSupported(false);
-          setSetupWarning(
-            "Para guardar liquidaciones debes ejecutar el script `database/add_salary_adjustment_applications.sql` en Supabase."
-          );
-          setErrorMsg(
-            "No pudimos registrar la liquidación porque falta la tabla de aplicaciones. Ejecuta el script indicado y vuelve a intentarlo."
-          );
-        } else {
-          setErrorMsg("No pudimos registrar la liquidación. Intenta nuevamente.");
-        }
-        setSaving(false);
-        return;
-      }
-    }
+    // Preparar aplicaciones para la función transaccional
+    const applicationsPayload = entriesToApply.map((entry) => ({
+      adjustment_id: entry.adjustment_id,
+      applied_amount: entry.applied_amount,
+    }));
 
     const nextWeekStart = new Date(weekStartDate);
     nextWeekStart.setDate(nextWeekStart.getDate() + 7);
@@ -577,11 +660,72 @@ export default function SalarySettlementPanel({
     };
     
     console.log("Guardando liquidación con los siguientes datos:", settlementData);
+    console.log("Aplicaciones a registrar:", applicationsPayload);
     
-    const { data: insertedData, error: settlementError } = await supabase
-      .from("salary_settlements")
-      .insert(settlementData)
-      .select(); // Seleccionar los datos insertados para verificar
+    // Intentar usar función transaccional primero
+    let insertedData: any[] | null = null;
+    let settlementError: any = null;
+    
+    try {
+      const { data, error } = await supabase.rpc('register_settlement_with_applications', {
+        p_technician_id: technicianId,
+        p_week_start: weekStartISO,
+        p_amount: targetAmount,
+        p_payment_method: paymentMethod,
+        p_details: detailsPayload,
+        p_applications: applicationsPayload.length > 0 ? applicationsPayload : null,
+        p_created_by: userData?.user?.id ?? null,
+      });
+      
+      if (error) {
+        console.warn("Error usando función transaccional, intentando método antiguo:", error);
+        // Fallback al método antiguo si la función no existe
+        settlementError = error;
+      } else if (data) {
+        // La función retorna el ID de la liquidación
+        const settlementId = data;
+        // Obtener los datos completos
+        const { data: settlementData, error: fetchError } = await supabase
+          .from("salary_settlements")
+          .select("*")
+          .eq("id", settlementId)
+          .single();
+        
+        if (fetchError) {
+          settlementError = fetchError;
+        } else {
+          insertedData = [settlementData];
+        }
+      }
+    } catch (rpcError: any) {
+      console.warn("Función transaccional no disponible, usando método antiguo:", rpcError);
+      // Fallback: usar método antiguo
+      const { data, error } = await supabase
+        .from("salary_settlements")
+        .insert(settlementData)
+        .select();
+      
+      insertedData = data;
+      settlementError = error;
+      
+      // Si el settlement se guardó, guardar aplicaciones por separado
+      if (data && data.length > 0 && applicationsSupported && entriesToApply.length > 0) {
+        const payload = entriesToApply.map((entry) => ({
+          ...entry,
+          week_start: weekStartISO,
+          created_by: userData?.user?.id ?? null,
+        }));
+        
+        const { error: appError } = await supabase
+          .from("salary_adjustment_applications")
+          .insert(payload);
+        
+        if (appError) {
+          console.error("Error guardando aplicaciones:", appError);
+          setErrorMsg("⚠️ La liquidación se guardó pero hubo un error al registrar las aplicaciones. Verifica manualmente.");
+        }
+      }
+    }
 
     setSaving(false);
 
@@ -733,62 +877,28 @@ export default function SalarySettlementPanel({
         </div>
       )}
       <div>
-        <h5 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-          {context === "admin" ? "Liquidación manual" : "Liquidación de sueldo"}
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <h5 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+            💡 Guía de Pago al Técnico
+            {technicianName && <span className="text-xs text-blue-600">• {technicianName}</span>}
+          </h5>
+          <div className="text-xs text-blue-800 space-y-1">
+            <p><strong>Paso 1:</strong> Revisa el "Total a liquidar" (ganancias menos descuentos)</p>
+            <p><strong>Paso 2:</strong> Si el técnico tiene adelantos pendientes, selecciona cuáles descontar</p>
+            <p><strong>Paso 3:</strong> Puedes descontar el adelanto completo o solo una parte (pago parcial)</p>
+            <p><strong>Paso 4:</strong> Selecciona el medio de pago y confirma el monto final</p>
+          </div>
+        </div>
+        
+        <h5 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-2">
+          💵 Realizar Pago al Técnico
           {technicianName && <span className="text-xs text-slate-500">• {technicianName}</span>}
         </h5>
         <p className="text-xs text-slate-500 mb-3">
-          Selecciona el tipo de ajuste y el monto a liquidar.
+          Este es el pago final que recibirá el técnico. Si tiene adelantos, puedes descontarlos aquí.
         </p>
         
         {/* Selector de tipo de ajuste */}
-        <div className="mb-4">
-          <label className="text-xs font-semibold text-slate-700 mb-2 block">Tipo de ajuste:</label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSettlementType("total");
-                // Establecer automáticamente al monto completo
-                const defaultAmount = Math.max(minPayable, Math.min(netRemaining, maxPayable));
-                setCustomAmountInput(defaultAmount);
-                if (paymentMethod === "efectivo/transferencia") {
-                  setCashAmount(0);
-                  setTransferAmount(0);
-                }
-              }}
-              className={`px-4 py-2 text-xs font-medium rounded-md border transition ${
-                settlementType === "total"
-                  ? "bg-brand-light text-white border-brand-light"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              Ajuste Total
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSettlementType("partial");
-                // Resetear montos para ajuste parcial
-                setCustomAmountInput(0);
-                setCashAmount(0);
-                setTransferAmount(0);
-              }}
-              className={`px-4 py-2 text-xs font-medium rounded-md border transition ${
-                settlementType === "partial"
-                  ? "bg-brand-light text-white border-brand-light"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              Ajuste Parcial
-            </button>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">
-            {settlementType === "total" 
-              ? "Se liquidará el monto completo disponible."
-              : "Puedes pagar un monto menor y el saldo restante quedará pendiente."}
-          </p>
-        </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <div className="flex flex-col gap-2">
@@ -828,7 +938,7 @@ export default function SalarySettlementPanel({
                     value={customAmountInput}
                     min={0}
                     max={netRemaining}
-                    disabled={settlementType === "total"}
+                    disabled={false}
                     onChange={(e) => {
                       const amount = Number(e.target.value) || 0;
                       const clamped = Math.min(amount, netRemaining);
@@ -865,7 +975,7 @@ export default function SalarySettlementPanel({
                     value={customAmountInput}
                     min={0}
                     max={netRemaining}
-                    disabled={settlementType === "total"}
+                    disabled={false}
                     onChange={(e) => {
                       const amount = Number(e.target.value) || 0;
                       const clamped = Math.min(amount, netRemaining);
@@ -991,116 +1101,252 @@ export default function SalarySettlementPanel({
         </div>
       )}
 
-      {noAdjustments ? (
-        <div className="text-sm text-slate-500 bg-white border border-dashed border-slate-300 rounded-md p-4">
-          {netRemaining <= 0
-            ? "No hay saldo pendiente. Todo está liquidado 🎉"
-            : `No hay ajustes pendientes esta semana. Puedes registrar el pago completo de $${formatAmount(
-                netRemaining
-              )} usando el botón.`}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              Ajustes pendientes ({pendingAdjustments.length})
-            </span>
-            <span className="text-xs text-slate-500">
-              Total seleccionado: ${formatAmount(selectedAdjustmentsTotal)}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {pendingAdjustments.map((adj) => {
-              const draftValue = adjustmentDrafts[adj.id] ?? (adj.isAvailableThisWeek ? adj.remaining : 0);
-              const isOmitted = draftValue === 0;
-              const isDeferred = !adj.isAvailableThisWeek;
-              return (
-                <div
-                  key={adj.id}
-                  className="bg-white border border-slate-200 rounded-md p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span
-                        className={`font-semibold ${
-                          adj.type === "advance" ? "text-blue-600" : "text-red-600"
-                        }`}
-                      >
-                        {adj.type === "advance" ? "Adelanto" : "Descuento"}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {adj.isCurrentWeek ? "Semana actual" : "Pendiente anterior"}
-                      </span>
-                    </div>
-                    {adj.note && <p className="text-xs text-slate-600 mt-0.5">{adj.note}</p>}
-                    <p className="text-xs text-slate-500 mt-1">
-                      Registrado el {formatDate(adj.created_at)}
-                    </p>
-                    {isDeferred && (
-                      <p className="text-xs text-amber-600 mt-1">
-                        Disponible desde {formatDate(adj.availableFromDate)}
-                      </p>
-                    )}
+      {/* Mostrar TODOS los ajustes, separando pendientes de saldados */}
+      <div className="space-y-3">
+        {/* DEBUG: Mostrar información de ajustes cargados */}
+        {process.env.NODE_ENV === 'development' && pendingAdjustments.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-2 text-xs">
+            <p className="font-semibold">🔍 DEBUG: Total ajustes cargados: {pendingAdjustments.length}</p>
+            <p>Pendientes (remaining &gt; 0): {pendingAdjustments.filter(adj => adj.remaining > 0).length}</p>
+            <p>Saldados (remaining = 0): {pendingAdjustments.filter(adj => adj.remaining <= 0).length}</p>
+            <p>Disponibles esta semana: {pendingAdjustments.filter(adj => adj.isAvailableThisWeek).length}</p>
+            {pendingAdjustments.filter(adj => adj.amount === 100000 && adj.type === 'advance').length > 0 && (
+              <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
+                <p className="text-red-800 font-bold">
+                  ⚠️ ADELANTO DE 100,000 ENCONTRADO:
+                </p>
+                {pendingAdjustments.filter(adj => adj.amount === 100000 && adj.type === 'advance').map(adj => (
+                  <div key={adj.id} className="text-red-700 mt-1">
+                    ID: {adj.id.slice(0, 8)}... | 
+                    Monto: {formatAmount(adj.amount)} | 
+                    Aplicado: {formatAmount(adj.appliedTotal)} | 
+                    Restante: {formatAmount(adj.remaining)} | 
+                    Disponible: {adj.isAvailableThisWeek ? 'Sí' : 'No'}
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div className="text-xs text-slate-600">
-                      Pendiente:
-                      <span className="font-semibold text-slate-900 ml-1">
-                        ${formatAmount(adj.remaining)}
-                      </span>
-                    </div>
-                    {canEditAdjustments ? (
-                      <div className="flex items-center gap-2">
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Ajustes pendientes (remaining > 0) */}
+        {pendingAdjustments.filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek).length > 0 && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">
+                Adelantos y Descuentos Pendientes ({pendingAdjustments.filter(a => a.remaining > 0 && a.isAvailableThisWeek).length})
+              </span>
+              <span className="text-sm text-slate-600 font-medium">
+                Total a descontar: <span className="text-red-600">{formatAmount(selectedAdjustmentsTotal)}</span>
+              </span>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">
+              <p className="text-xs text-blue-800">
+                💡 <strong>Instrucciones:</strong> Marca los adelantos que quieres descontar y ajusta el monto si es necesario. 
+                Puedes descontar el monto completo o solo una parte.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {pendingAdjustments
+                .filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek)
+                .map((adj) => {
+                const selection = selectedAdjustments[adj.id] || { selected: false, amount: adj.remaining };
+                const isSelected = selection.selected;
+                const amountToDeduct = isSelected ? selection.amount : 0;
+                
+                return (
+                  <div
+                    key={adj.id}
+                    className={`bg-white border-2 rounded-lg p-4 transition-all ${
+                      isSelected ? "border-blue-500 bg-blue-50" : "border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox para seleccionar */}
+                      <div className="flex-shrink-0 pt-1">
                         <input
-                          type="number"
-                          min={0}
-                          max={adj.remaining}
-                          step={1000}
-                          value={draftValue}
-                          onChange={(e) => handleDraftChange(adj.id, e.target.value)}
-                          disabled={isDeferred}
-                          className={`w-28 border rounded-md px-2 py-1 text-sm ${
-                            isDeferred ? "border-slate-200 bg-slate-100 text-slate-400" : "border-slate-300"
-                          }`}
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleAdjustmentSelection(adj.id)}
+                          className="w-5 h-5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                         />
-                        <button
-                          type="button"
-                          onClick={() => handleToggleAdjustment(adj.id, isOmitted)}
-                          disabled={isDeferred}
-                          className={`text-xs font-medium px-3 py-1 rounded-md border ${
-                            isDeferred
-                              ? "border-slate-300 text-slate-400 cursor-not-allowed bg-slate-100"
-                              : isOmitted
-                                  ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50"
-                                  : "border-red-500 text-red-600 hover:bg-red-50"
-                          }`}
-                        >
-                          {isDeferred ? "Pendiente próxima semana" : isOmitted ? "Incluir" : "Omitir"}
-                        </button>
+                      </div>
+                      
+                      {/* Información del ajuste */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className={`font-semibold text-sm ${
+                              adj.type === "advance" ? "text-blue-600" : "text-red-600"
+                            }`}
+                          >
+                            {adj.type === "advance" ? "💰 Adelanto" : "📉 Descuento"}
+                          </span>
+                          {adj.note && (
+                            <span className="text-xs text-slate-500">• {adj.note}</span>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-2">
+                          <div>
+                            <span className="text-slate-500">Monto original:</span>{" "}
+                            <span className="font-semibold">{formatAmount(adj.amount)}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Pendiente:</span>{" "}
+                            <span className="font-semibold text-slate-900">{formatAmount(adj.remaining)}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Campo para editar monto a descontar */}
+                        {isSelected && (
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <label className="block text-xs font-medium text-slate-700 mb-1">
+                              Monto a descontar (puede ser parcial):
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                max={adj.remaining}
+                                step={1000}
+                                value={amountToDeduct}
+                                onChange={(e) => handleAdjustmentAmountChange(adj.id, e.target.value)}
+                                className="w-32 border border-slate-300 rounded-md px-3 py-2 text-sm font-medium"
+                                placeholder="0"
+                              />
+                              <span className="text-xs text-slate-500">
+                                de {formatAmount(adj.remaining)} disponible
+                              </span>
+                            </div>
+                            {amountToDeduct < adj.remaining && (
+                              <p className="text-xs text-amber-600 mt-1">
+                                ⚠️ Se descontarán {formatAmount(amountToDeduct)}. 
+                                Quedarán {formatAmount(adj.remaining - amountToDeduct)} pendientes para la próxima semana.
+                              </p>
+                            )}
+                            {amountToDeduct === adj.remaining && (
+                              <p className="text-xs text-emerald-600 mt-1">
+                                ✅ Se descontará el monto completo. No quedará pendiente.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Botón eliminar (solo admin) */}
+                      {canEditAdjustments && (
                         <button
                           type="button"
                           onClick={() => handleDeleteAdjustment(adj.id)}
                           disabled={deletingAdjustmentId === adj.id}
-                          className="text-xs font-medium px-2 py-1 rounded-md border border-red-500 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex-shrink-0 text-red-600 hover:text-red-800 disabled:opacity-50"
                           title="Eliminar ajuste"
                         >
                           {deletingAdjustmentId === adj.id ? "..." : "🗑️"}
                         </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Ajustes completamente saldados (remaining = 0) - solo para ver/eliminar */}
+        {pendingAdjustments.filter(adj => adj.remaining <= 0).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-300">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-500 uppercase">
+                Ajustes Saldados ({pendingAdjustments.filter(adj => adj.remaining <= 0).length})
+              </p>
+              <p className="text-xs text-slate-400">
+                Estos ajustes ya fueron completamente aplicados
+              </p>
+            </div>
+            <div className="space-y-2">
+              {pendingAdjustments
+                .filter(adj => adj.remaining <= 0)
+                .map((adj) => (
+                  <div
+                    key={adj.id}
+                    className="bg-slate-50 border border-slate-200 rounded-md p-3 flex items-center justify-between"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span
+                          className={`font-semibold ${
+                            adj.type === "advance" ? "text-blue-600" : "text-red-600"
+                          }`}
+                        >
+                          {adj.type === "advance" ? "💰 Adelanto" : "📉 Descuento"}
+                        </span>
+                        {adj.note && (
+                          <span className="text-xs text-slate-500">• {adj.note}</span>
+                        )}
+                        <span className="text-xs text-emerald-600 font-medium">✅ Saldado</span>
                       </div>
-                    ) : (
-                      <div className="text-xs text-slate-500">
-                        {isDeferred
-                          ? "Se descontará la próxima semana."
-                          : "Se descontará completo en la liquidación."}
+                      <div className="text-xs text-slate-500 mt-1">
+                        Monto original: {formatAmount(adj.amount)} • 
+                        Aplicado: {formatAmount(adj.appliedTotal)} • 
+                        Restante: {formatAmount(adj.remaining)}
                       </div>
+                    </div>
+                    {canEditAdjustments && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAdjustment(adj.id)}
+                        disabled={deletingAdjustmentId === adj.id}
+                        className="flex-shrink-0 ml-3 px-3 py-1 text-xs font-medium rounded-md border border-red-500 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Eliminar ajuste"
+                      >
+                        {deletingAdjustmentId === adj.id ? "Eliminando..." : "🗑️ Eliminar"}
+                      </button>
                     )}
                   </div>
-                </div>
-              );
-            })}
+                ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Mostrar ajustes diferidos (no disponibles esta semana) */}
+        {pendingAdjustments.filter(adj => !adj.isAvailableThisWeek && adj.remaining > 0).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Ajustes pendientes para próximas semanas
+            </p>
+            <div className="space-y-2">
+              {pendingAdjustments
+                .filter(adj => !adj.isAvailableThisWeek && adj.remaining > 0)
+                .map((adj) => (
+                  <div
+                    key={adj.id}
+                    className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-700"
+                  >
+                    <span className="font-semibold">
+                      {adj.type === "advance" ? "Adelanto" : "Descuento"}
+                    </span>
+                    {" "}de {formatAmount(adj.remaining)} - Disponible desde {formatDate(adj.availableFromDate)}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Mensaje si no hay ajustes */}
+        {pendingAdjustments.length === 0 && (
+          <div className="text-sm text-slate-500 bg-white border border-dashed border-slate-300 rounded-md p-4">
+            {netRemaining <= 0
+              ? "No hay saldo pendiente. Todo está liquidado 🎉"
+              : `No hay ajustes pendientes esta semana. Puedes registrar el pago completo de ${formatAmount(
+                  netRemaining
+                )} usando el botón.`}
+          </div>
+        )}
+      </div>
 
       {errorMsg && <div className="text-xs text-red-600">{errorMsg}</div>}
       {successMsg && <div className="text-xs text-emerald-600">{successMsg}</div>}

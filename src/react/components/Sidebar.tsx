@@ -9,7 +9,8 @@ export type DashboardSection =
   | "users" 
   | "payments" 
   | "orders" 
-  | "branches";
+  | "branches"
+  | "metrics";
 
 interface SidebarProps {
   currentSection: DashboardSection;
@@ -92,6 +93,12 @@ export default function Sidebar({ currentSection, onSectionChange, userRole, isO
       label: "Gestión de Sucursales y Gastos",
       icon: "🏢",
       // Tanto admin como encargado pueden ver esto, pero el encargado solo ve/agrega gastos hormiga de su sucursal
+    },
+    {
+      id: "metrics",
+      label: "Métricas y Análisis",
+      icon: "📊",
+      adminOnly: true,
     },
   ];
 

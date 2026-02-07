@@ -209,12 +209,10 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
         return dateB - dateA; // Más recientes primero
       });
 
-      // Consulta para ajustes
-      // Mostrar TODOS los ajustes no liquidadas para que se vean todos los ajustes nuevos
-      // Si hay liquidación, solo contar ajustes creados DESPUÉS de la liquidación
+      // Consulta para ajustes - CARGAR CON APLICACIONES para calcular remaining
       let adjustmentsQuery = supabase
         .from("salary_adjustments")
-        .select("*")
+        .select("*, applications:salary_adjustment_applications(applied_amount, week_start)")
         .eq("technician_id", technicianId);
       
       // Si hay liquidación, solo mostrar ajustes creados DESPUÉS de la liquidación
@@ -232,7 +230,31 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
         .eq("week_start", weekStartISO);
 
       // Consulta para ajustes (ya está definida arriba)
-      const { data: adjustmentData, error: adjustmentsError } = await adjustmentsQuery.order("created_at", { ascending: false });
+      let adjustmentData: any[] | null = null;
+      let adjustmentsError: any = null;
+      
+      const adjustmentsResponse = await adjustmentsQuery.order("created_at", { ascending: false });
+      adjustmentData = adjustmentsResponse.data;
+      adjustmentsError = adjustmentsResponse.error;
+      
+      // Si falla la consulta con aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
+      if (adjustmentsError) {
+        console.warn("⚠️ No se pudieron cargar aplicaciones, usando monto total:", adjustmentsError);
+        let fallbackQuery = supabase
+          .from("salary_adjustments")
+          .select("*")
+          .eq("technician_id", technicianId);
+        
+        if (lastSettlementDate) {
+          fallbackQuery = fallbackQuery.gte("created_at", lastSettlementDate.toISOString());
+        }
+        
+        const fallbackResponse = await fallbackQuery.order("created_at", { ascending: false });
+        if (!fallbackResponse.error) {
+          adjustmentData = fallbackResponse.data;
+          adjustmentsError = null;
+        }
+      }
 
       // Log para depuración
       if (adjustmentsError) {
@@ -298,7 +320,32 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
         setReturnedOrders(returned);
       }
 
-      setAdjustments(((adjustmentData as SalaryAdjustment[]) ?? []).sort(
+      // Calcular remaining para cada ajuste basándose en las aplicaciones
+      const adjustmentsWithRemaining = ((adjustmentData as any[]) ?? []).map((adj: any) => {
+        const applications = adj.applications || [];
+        const appliedTotal = applications.reduce((sum: number, app: any) => sum + (app.applied_amount ?? 0), 0);
+        const remaining = Math.max((adj.amount ?? 0) - appliedTotal, 0);
+        
+        // Log para debugging
+        if (adj.amount === 100000 && adj.type === 'advance') {
+          console.warn(`⚠️ ADELANTO DE 100,000 en WeeklyReport:`, {
+            id: adj.id,
+            amount: adj.amount,
+            appliedTotal,
+            remaining,
+            applications: applications.length,
+            willShow: remaining > 0
+          });
+        }
+        
+        return {
+          ...adj,
+          remaining, // Agregar remaining al objeto
+          appliedTotal // Agregar appliedTotal para referencia
+        };
+      }).filter((adj: any) => adj.remaining > 0); // SOLO mostrar ajustes con remaining > 0
+      
+      setAdjustments((adjustmentsWithRemaining as SalaryAdjustment[]).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
       setSettledAmount(
@@ -583,6 +630,15 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       </div>
 
       <div className="mt-6 pt-6 border-t border-slate-200">
+        <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+          <h4 className="text-sm font-semibold text-slate-800 mb-2">📋 Diferencia entre Ajustes y Liquidación</h4>
+          <div className="text-xs text-slate-600 space-y-1">
+            <p><strong>🔹 Ajustes de sueldo:</strong> Registra adelantos o descuentos que el técnico debe. Estos se restan de sus ganancias futuras.</p>
+            <p><strong>🔹 Liquidación de sueldo:</strong> Es el pago real que le haces al técnico. Aquí puedes descontar los adelantos pendientes.</p>
+            <p className="text-slate-500 mt-2">💡 <strong>Ejemplo:</strong> Si el técnico pidió un adelanto de $50,000, primero lo registras como "Ajuste". Luego, al pagarle, seleccionas ese adelanto en la "Liquidación" para descontarlo del pago.</p>
+          </div>
+        </div>
+        
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
             <h4 className="text-sm font-semibold text-slate-800">Ajustes de sueldo de la semana</h4>

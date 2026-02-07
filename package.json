@@ -17,6 +17,7 @@
     "date-fns": "^3.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "recharts": "^3.7.0",
     "tailwindcss": "^3.4.14"
   },
   "devDependencies": {
@@ -29,4 +30,3 @@
     "typescript": "^5.6.3"
   }
 }
-
