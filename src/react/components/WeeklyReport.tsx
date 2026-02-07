@@ -46,6 +46,8 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
   const [loading, setLoading] = useState(true);
   const [settlementPanelOpen, setSettlementPanelOpen] = useState(true);
   const [settledAmount, setSettledAmount] = useState(0);
+  const [totalAppliedAdjustments, setTotalAppliedAdjustments] = useState(0);
+  const [loans, setLoans] = useState<SalaryAdjustment[]>([]);
 
   const loadData = useCallback(async () => {
       setLoading(true);
@@ -223,9 +225,11 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       // Si no hay liquidación, no aplicar filtro de fecha para mostrar todos los ajustes
 
       // Consulta para liquidaciones (solo montos)
+      // IMPORTANTE: Buscar TODAS las liquidaciones de esta semana, no solo las que coinciden exactamente con week_start
+      // Esto es porque el pago puede haberse registrado en una fecha diferente pero corresponder a esta semana
       const { data: settlementsAmounts } = await supabase
         .from("salary_settlements")
-        .select("amount")
+        .select("amount, week_start, created_at")
         .eq("technician_id", technicianId)
         .eq("week_start", weekStartISO);
 
@@ -274,10 +278,36 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       });
 
       if (orders) {
-        // Excluir órdenes devueltas y canceladas de los cálculos
-        const earned = orders
+        // IMPORTANTE: Calcular totalEarned con TODAS las órdenes pagadas de la semana,
+        // incluso si ya fueron liquidadas. Esto es necesario para mostrar el saldo correcto.
+        // Si hay liquidación, las órdenes liquidadas no aparecen en `orders` porque se filtran,
+        // pero necesitamos incluirlas en el cálculo para que el saldo sea correcto.
+        
+        // Primero, calcular con las órdenes que tenemos (pueden ser solo las no liquidadas)
+        let earned = orders
           .filter((o) => o.status === "paid")
           .reduce((s, o) => s + (o.commission_amount ?? 0), 0);
+        
+        // Si hay liquidación, necesitamos sumar también las órdenes que fueron liquidadas
+        // pero que no aparecen en `orders` porque se filtraron por fecha
+        if (lastSettlementDate) {
+          // Buscar órdenes pagadas ANTES de la liquidación pero que pertenecen a esta semana
+          const { data: paidBeforeSettlement } = await supabase
+            .from("orders")
+            .select("commission_amount")
+            .eq("technician_id", technicianId)
+            .eq("status", "paid")
+            .lt("paid_at", lastSettlementDate.toISOString())
+            .or(`and(payout_week.eq.${currentPayout.week},payout_year.eq.${currentPayout.year}),and(paid_at.gte.${startUTC.toISOString()},paid_at.lte.${endUTC.toISOString()})`);
+          
+          if (paidBeforeSettlement) {
+            const earnedBeforeSettlement = paidBeforeSettlement.reduce(
+              (s, o) => s + (o.commission_amount ?? 0), 
+              0
+            );
+            earned += earnedBeforeSettlement;
+          }
+        }
         // Pendientes: recalcular comisión basándose en el medio de pago actual
         // (puede que hayan agregado el medio de pago después de crear la orden)
         const pending = orders
@@ -321,31 +351,65 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       }
 
       // Calcular remaining para cada ajuste basándose en las aplicaciones
-      const adjustmentsWithRemaining = ((adjustmentData as any[]) ?? []).map((adj: any) => {
-        const applications = adj.applications || [];
-        const appliedTotal = applications.reduce((sum: number, app: any) => sum + (app.applied_amount ?? 0), 0);
-        const remaining = Math.max((adj.amount ?? 0) - appliedTotal, 0);
-        
-        // Log para debugging
-        if (adj.amount === 100000 && adj.type === 'advance') {
-          console.warn(`⚠️ ADELANTO DE 100,000 en WeeklyReport:`, {
-            id: adj.id,
-            amount: adj.amount,
-            appliedTotal,
-            remaining,
-            applications: applications.length,
-            willShow: remaining > 0
-          });
-        }
-        
-        return {
-          ...adj,
-          remaining, // Agregar remaining al objeto
-          appliedTotal // Agregar appliedTotal para referencia
-        };
-      }).filter((adj: any) => adj.remaining > 0); // SOLO mostrar ajustes con remaining > 0
+      // IMPORTANTE: Excluir préstamos (type: 'loan') porque no afectan saldos
+      const adjustmentsWithRemaining = ((adjustmentData as any[]) ?? [])
+        .filter((adj: any) => adj.type !== 'loan') // Excluir préstamos
+        .map((adj: any) => {
+          const applications = adj.applications || [];
+          const appliedTotal = applications.reduce((sum: number, app: any) => sum + (app.applied_amount ?? 0), 0);
+          const remaining = Math.max((adj.amount ?? 0) - appliedTotal, 0);
+          
+          // Log para debugging
+          if (adj.amount === 100000 && adj.type === 'advance') {
+            console.warn(`⚠️ ADELANTO DE 100,000 en WeeklyReport:`, {
+              id: adj.id,
+              amount: adj.amount,
+              appliedTotal,
+              remaining,
+              applications: applications.length,
+              willShow: remaining > 0
+            });
+          }
+          
+          return {
+            ...adj,
+            remaining, // Agregar remaining al objeto
+            appliedTotal // Agregar appliedTotal para referencia
+          };
+        })
+        .filter((adj: any) => adj.remaining > 0); // SOLO mostrar ajustes con remaining > 0
       
       setAdjustments((adjustmentsWithRemaining as SalaryAdjustment[]).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ));
+      
+      // IMPORTANTE: Calcular solo los ajustes YA APLICADOS EN ESTA SEMANA (no los pendientes ni los de semanas anteriores)
+      // Esto es lo que se muestra como "Ajustes registrados" - solo lo que ya se descontó en liquidaciones de esta semana
+      const totalAppliedAdjustments = ((adjustmentData as any[]) ?? [])
+        .filter((adj: any) => adj.type !== 'loan') // Excluir préstamos
+        .reduce((sum: number, adj: any) => {
+          const applications = adj.applications || [];
+          // Solo contar aplicaciones de ESTA semana
+          const thisWeekApplications = applications.filter((app: any) => {
+            if (!app.week_start) return false;
+            return app.week_start === weekStartISO;
+          });
+          const appliedTotal = thisWeekApplications.reduce((appSum: number, app: any) => appSum + (app.applied_amount ?? 0), 0);
+          return sum + appliedTotal; // Solo sumar lo que YA fue aplicado ESTA SEMANA
+        }, 0);
+      
+      // Guardar el total de ajustes aplicados para mostrarlo
+      setTotalAppliedAdjustments(totalAppliedAdjustments);
+      
+      // Separar préstamos (no afectan saldos, solo se muestran para información)
+      const loansData = ((adjustmentData as any[]) ?? [])
+        .filter((adj: any) => adj.type === 'loan')
+        .map((adj: any) => ({
+          ...adj,
+          remaining: adj.amount ?? 0, // Para préstamos, remaining = amount
+        }));
+      
+      setLoans((loansData as SalaryAdjustment[]).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
       setSettledAmount(
@@ -377,12 +441,20 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
     };
   }, [loadData, refreshKey]);
 
-  const totalAdjustments = useMemo(
-    () => adjustments.reduce((sum, adj) => sum + (adj.amount ?? 0), 0),
-    [adjustments]
-  );
+  // IMPORTANTE: totalAdjustments debe ser solo los ajustes YA APLICADOS (no los pendientes)
+  // Los ajustes pendientes NO deben descontarse hasta que se seleccionen en el panel de liquidación
+  const totalAdjustments = totalAppliedAdjustments;
 
+  // Calcular el saldo disponible:
+  // 1. Total ganado (totalEarned)
+  // 2. Menos ajustes aplicados (totalAdjustments) - estos ya fueron descontados
+  // 3. Menos descuentos por devoluciones (returnsDiscount)
+  // 4. Menos lo que ya se le pagó (settledAmount) - esto es lo que ya salió de la empresa
+  // El resultado es lo que AÚN está disponible para pagar
   const netEarned = totalEarned - totalAdjustments - returnsDiscount;
+  // IMPORTANTE: netAfterSettlements es el saldo DISPONIBLE después de descontar ajustes y pagos
+  // Si es negativo, significa que se le pagó más de lo que tenía disponible
+  // Si es positivo, es lo que aún se le debe
   const netAfterSettlements = netEarned - settledAmount;
   const availableForAdvance = Math.max(netAfterSettlements, 0);
   const baseAmountForSettlement = Math.max(totalEarned - returnsDiscount, 0);
@@ -532,10 +604,12 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
           <span className="font-semibold text-emerald-600">{formatCLP(totalEarned)}</span>
         </div>
 
-        <div className="flex justify-between items-center">
-          <span className="text-slate-600">Ajustes registrados (descuentos / adelantos):</span>
-          <span className="font-semibold text-slate-600">-{formatCLP(totalAdjustments)}</span>
-        </div>
+        {totalAdjustments > 0 && (
+          <div className="flex justify-between items-center">
+            <span className="text-slate-600">Ajustes registrados (descuentos / adelantos):</span>
+            <span className="font-semibold text-slate-600">-{formatCLP(totalAdjustments)}</span>
+          </div>
+        )}
 
         {returnsDiscount > 0 && (
           <div className="flex justify-between items-center">
@@ -546,7 +620,14 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
 
         <div className="flex justify-between items-center">
           <span className="text-slate-600 font-medium">Total real disponible:</span>
-          <span className="font-semibold text-brand">{formatCLP(netAfterSettlements)}</span>
+          <span className={`font-semibold ${netAfterSettlements >= 0 ? 'text-brand' : 'text-red-600'}`}>
+            {formatCLP(Math.max(0, netAfterSettlements))}
+          </span>
+          {netAfterSettlements < 0 && (
+            <span className="text-xs text-red-600 ml-2">
+              (Se pagó {formatCLP(Math.abs(netAfterSettlements))} de más)
+            </span>
+          )}
         </div>
         <div className="flex justify-between items-center">
           <span className="text-slate-600">Liquidado esta semana:</span>
@@ -800,6 +881,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
                 >
                   <option value="advance">Adelanto</option>
                   <option value="discount">Descuento</option>
+                  <option value="loan">Préstamo (no afecta saldos)</option>
                 </select>
               </div>
               <div>
@@ -946,6 +1028,48 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
             </div>
           )}
         </div>
+        
+        {/* Sección de Préstamos (solo información, no afectan saldos) */}
+        {loans.length > 0 && (
+          <div className="mt-6 pt-6 border-t-2 border-purple-200">
+            <h3 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
+              💰 Préstamos ({loans.length})
+            </h3>
+            <p className="text-xs text-purple-600 mb-3">
+              Los préstamos son registros internos y no afectan tus saldos de liquidación.
+            </p>
+            <div className="space-y-2">
+              {loans.map((loan) => (
+                <div
+                  key={loan.id}
+                  className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-purple-700">💰 Préstamo</span>
+                        {loan.note && (
+                          <span className="text-xs text-purple-600">• {loan.note.split('\n')[0]}</span>
+                        )}
+                      </div>
+                      <div className="text-sm font-semibold text-purple-800 mb-2">
+                        Monto: {formatCLP(loan.amount ?? 0)}
+                      </div>
+                      {loan.note && loan.note.includes('\n') && (
+                        <div className="mt-2 text-xs text-purple-600 space-y-1">
+                          <p className="font-medium text-purple-700">Historial de pagos:</p>
+                          {loan.note.split('\n').slice(1).map((line, idx) => (
+                            <div key={idx} className="pl-2">{line}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

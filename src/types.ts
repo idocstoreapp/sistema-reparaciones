@@ -63,7 +63,7 @@ export interface SalaryAdjustment {
   id: string;
   created_at: string;
   technician_id: string;
-  type: "advance" | "discount";
+  type: "advance" | "discount" | "loan";
   amount: number;
   note?: string | null;
   available_from?: string | null;

@@ -1179,219 +1179,10 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                     <span className="ml-2 text-xs text-slate-500">(Neto estimado: {formatCLP(netTotal, { withLabel: true })})</span>
                   </div>
                 </div>
-                <div className="text-2xl">{isSelected ? "▼" : "▶"}</div>
+                <div className="text-2xl">▶</div>
               </div>
 
-              {isSelected && (
-                <div
-                  className="mt-4 pt-4 border-t border-slate-200"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <h4 className="font-medium text-slate-700 mb-2">
-                    Pagos y Descuentos
-                  </h4>
-                  <div className="flex flex-col gap-2 text-sm text-slate-600 mb-3">
-                    <div className="flex items-center justify-between">
-                      <span>
-                        Total ajustes: {formatCLP(adjustmentTotal)}
-                      </span>
-                    </div>
-                    {returnsTotal > 0 && (
-                      <div className="flex items-center justify-between text-red-600">
-                        <span>Total devoluciones/cancelaciones: -{formatCLP(returnsTotal)}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Saldo estimado: {formatCLP(netTotal)}</span>
-                    </div>
-                    {pendingDebt > 0 && (
-                      <div className="flex items-center justify-between text-amber-600">
-                        <span>Pendiente próxima semana (el técnico debe): {formatCLP(pendingDebt)}</span>
-                      </div>
-                    )}
-                    {settlementTotal > 0 && (
-                      <div className="flex items-center justify-between text-sky-600">
-                        <span>Liquidado: {formatCLP(settlementTotal)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSettlementPanel(tech.id);
-                      }}
-                      className="px-3 py-1.5 text-xs font-semibold border border-brand-light text-brand rounded-md hover:bg-brand/5 transition"
-                    >
-                      {isSettlementOpen ? "Ocultar ajustes de sueldo" : "Ajustes de sueldo"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenHistoryForTech(tech.id);
-                      }}
-                      className="px-3 py-1.5 text-xs font-semibold border border-slate-300 text-slate-600 rounded-md hover:bg-slate-100 transition"
-                    >
-                      Historial de liquidaciones
-                    </button>
-                    {cardActionError && (
-                      <p className="text-xs text-red-600">{cardActionError}</p>
-                    )}
-                  </div>
-                  {isSettlementOpen && (
-                    <div className="mb-4">
-                      <SalarySettlementPanel
-                        technicianId={tech.id}
-                        technicianName={tech.name}
-                        baseAmount={weeklyTotal}
-                        adjustmentTotal={adjustmentTotal}
-                        context="admin"
-                        onAfterSettlement={() => {
-                          void loadWeeklyData();
-                          void loadAdjustmentsForTech(tech.id, true);
-                          if (historyPanelOpen) {
-                            void fetchHistoryWithFilters(historyFilters);
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
-                  {(cardAdjustments.length > 0 || cardReturns.length > 0) && (
-                    <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
-                      {cardReturns.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleSettleReturns(tech.id);
-                          }}
-                          disabled={isSettlingRet}
-                          className="px-3 py-1 text-xs font-medium text-white bg-amber-600 rounded-md hover:bg-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isSettlingRet ? "Eliminando devoluciones..." : "Eliminar devoluciones"}
-                        </button>
-                      )}
-                      {cardAdjustments.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleSettleAdjustments(tech.id);
-                          }}
-                          disabled={isSettlingAdj}
-                          className="px-3 py-1 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isSettlingAdj ? "Saldando ajustes..." : "Saldar ajustes"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {cardLoading ? (
-                    <p className="text-sm text-slate-500">Actualizando historial...</p>
-                  ) : cardAdjustments.length === 0 && cardReturns.length === 0 ? (
-                    <p className="text-sm text-slate-500">
-                      No hay ajustes ni devoluciones registradas esta semana.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {cardReturns.map((order) => {
-                        // Usar returned_at o cancelled_at si existe, sino usar created_at como fallback
-                        const statusDate = order.status === "returned" 
-                          ? (order.returned_at || order.created_at)
-                          : (order.cancelled_at || order.created_at);
-                        const dateTime = new Date(statusDate).toLocaleString("es-CL", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        });
-                        return (
-                          <div
-                            key={order.id}
-                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm p-3 bg-red-50/30 border border-red-200 rounded-md gap-2"
-                          >
-                            <div>
-                              <div>
-                                <span className="font-medium text-red-600">
-                                  {order.status === "returned" ? "Devolución" : "Cancelación"}
-                                </span>
-                                <span className="text-slate-600 ml-2">
-                                  - Orden #{order.order_number} • {order.device}
-                                </span>
-                              </div>
-                              <div className="text-xs text-slate-400 mt-1">
-                                {dateTime}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-semibold text-red-600">
-                                -{formatCLP(order.commission_amount ?? 0)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleDeleteReturn(tech.id, order.id);
-                                }}
-                                disabled={deletingReturnId === order.id || isSettlingRet}
-                                className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
-                              >
-                                {deletingReturnId === order.id ? "Eliminando..." : "Eliminar"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {cardAdjustments.map((adj) => (
-                        <div
-                          key={adj.id}
-                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm p-3 bg-slate-50 border border-slate-200 rounded-md gap-2"
-                        >
-                          <div>
-                          <div>
-                            <span
-                              className={`font-medium ${
-                                adj.type === "advance"
-                                  ? "text-blue-600"
-                                  : "text-red-600"
-                              }`}
-                            >
-                              {adj.type === "advance" ? "Adelanto" : "Descuento"}
-                            </span>
-                            {adj.note && (
-                              <span className="text-slate-600 ml-2">
-                                - {adj.note}
-                              </span>
-                            )}
-                            </div>
-                            <div className="text-xs text-slate-400 mt-1">
-                              {formatDate(adj.created_at)} •{" "}
-                              {new Date(adj.created_at).toLocaleTimeString("es-CL", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-semibold">{formatCLP(adj.amount)}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleDeleteAdjustment(tech.id, adj.id);
-                              }}
-                              disabled={deletingAdjustmentId === adj.id || isSettlingAdj}
-                              className="text-xs text-red-600 hover:text-red-500 disabled:opacity-60"
-                            >
-                              {deletingAdjustmentId === adj.id ? "Eliminando..." : "Eliminar"}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Sección expandible removida - usar el modal en su lugar (click en la tarjeta abre el modal) */}
             </div>
           );
         })}
@@ -1430,12 +1221,18 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                   <WeeklySummary technicianId={tech.id} refreshKey={refreshKey} />
                 </div>
 
-                {/* Reporte Semanal de Ganancias */}
+                {/* Panel de Liquidación y Gestión de Préstamos */}
                 <div>
-                  <WeeklyReport 
-                    technicianId={tech.id} 
-                    refreshKey={refreshKey}
-                    userRole="admin"
+                  <SalarySettlementPanel
+                    technicianId={tech.id}
+                    technicianName={tech.name}
+                    baseAmount={weeklyTotals[tech.id] ?? 0}
+                    adjustmentTotal={weeklyAdjustmentTotals[tech.id] ?? 0}
+                    context="admin"
+                    onAfterSettlement={() => {
+                      void loadWeeklyData();
+                      void loadAdjustmentsForTech(tech.id, true);
+                    }}
                   />
                 </div>
 
@@ -1529,24 +1326,24 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                               >
                                 <div className="flex justify-between items-center">
                                   <div>
-                                    <p className="font-semibold text-slate-800">
+                                    <p className="font-semibold text-slate-800 text-lg">
                                       {formatCLP(entry.amount)}
                                       {(entry.details as any)?.auto_generated && (
                                         <span className="ml-2 text-xs text-blue-600 font-normal">(Auto-generada)</span>
                                       )}
                                     </p>
-                                    <div className="text-xs text-slate-500 space-y-1">
+                                    <div className="text-xs text-slate-500 space-y-1 mt-2">
                                       {entry.created_at && (
                                         <p className="font-medium text-slate-700">
-                                          📅 {formatDate(entry.created_at)} • {new Date(entry.created_at).toLocaleTimeString("es-CL", {
+                                          📅 Fecha del pago: {formatDate(entry.created_at)} • {new Date(entry.created_at).toLocaleTimeString("es-CL", {
                                             hour: "2-digit",
                                             minute: "2-digit"
                                           })}
                                         </p>
                                       )}
-                                      {!(entry.details as any)?.auto_range && entry.week_start && (
-                                        <p>
-                                          📆 Período: {(() => {
+                                      {entry.week_start && (
+                                        <p className="font-medium text-slate-700">
+                                          📆 Período pagado: {(() => {
                                             try {
                                               const weekRange = getWeekRangeFromStart(entry.week_start);
                                               return `${formatDate(weekRange.start)} al ${formatDate(weekRange.end)}`;
@@ -1554,6 +1351,16 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                               return `${formatDate(entry.week_start)}`;
                                             }
                                           })()} • 💳 {paymentMethodLabel}
+                                        </p>
+                                      )}
+                                      {!(entry.details as any)?.auto_generated && (
+                                        <p className="text-emerald-600 font-semibold">
+                                          💵 Monto pagado: {formatCLP(entry.amount)}
+                                        </p>
+                                      )}
+                                      {!(entry.details as any)?.auto_generated && (
+                                        <p className="text-emerald-600 font-medium">
+                                          💵 Monto pagado: {formatCLP(entry.amount)}
                                         </p>
                                       )}
                                       {isMixedPayment && (

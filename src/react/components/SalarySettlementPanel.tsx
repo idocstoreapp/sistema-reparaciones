@@ -4,13 +4,212 @@ import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
 import type { SalaryAdjustment, SalaryAdjustmentApplication } from "@/types";
 
-interface SalarySettlementPanelProps {
+// Componente para gestionar préstamos
+function LoanManagementCard({ 
+  loan, 
+  technicianId, 
+  onUpdate, 
+  canEdit 
+}: { 
+  loan: AdjustmentWithPending; 
   technicianId: string;
-  technicianName?: string;
-  baseAmount: number;
-  adjustmentTotal: number;
-  context: "technician" | "admin";
-  onAfterSettlement?: () => void;
+  onUpdate: () => void;
+  canEdit: boolean;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editAmount, setEditAmount] = useState(loan.amount.toString());
+  const [editNote, setEditNote] = useState(loan.note || '');
+  const [saving, setSaving] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentNote, setPaymentNote] = useState('');
+  const [addingPayment, setAddingPayment] = useState(false);
+
+  const handleSaveEdit = async () => {
+    if (!canEdit) return;
+    setSaving(true);
+    const newAmount = parseFloat(editAmount) || 0;
+    
+    const { error } = await supabase
+      .from("salary_adjustments")
+      .update({ 
+        amount: newAmount,
+        note: editNote || null
+      })
+      .eq("id", loan.id);
+    
+    if (error) {
+      alert(`Error al actualizar préstamo: ${error.message}`);
+    } else {
+      setIsEditing(false);
+      onUpdate();
+    }
+    setSaving(false);
+  };
+
+  const handleAddPayment = async () => {
+    if (!canEdit) return;
+    const amount = parseFloat(paymentAmount) || 0;
+    if (amount <= 0) {
+      alert("El monto del pago debe ser mayor a 0");
+      return;
+    }
+    
+    setAddingPayment(true);
+    
+    // Actualizar el monto del préstamo restando el pago
+    const currentAmount = parseFloat(editAmount) || loan.amount;
+    const newAmount = Math.max(0, currentAmount - amount);
+    
+    const paymentInfo = `Pago de ${formatCLP(amount)} el ${formatDate(paymentDate)}${paymentNote ? ` - ${paymentNote}` : ''}`;
+    const updatedNote = loan.note 
+      ? `${loan.note}\n${paymentInfo}`
+      : paymentInfo;
+    
+    const { error } = await supabase
+      .from("salary_adjustments")
+      .update({ 
+        amount: newAmount,
+        note: updatedNote
+      })
+      .eq("id", loan.id);
+    
+    if (error) {
+      alert(`Error al registrar pago: ${error.message}`);
+    } else {
+      setPaymentAmount('');
+      setPaymentNote('');
+      setPaymentDate(new Date().toISOString().slice(0, 10));
+      setEditAmount(newAmount.toString());
+      onUpdate();
+    }
+    setAddingPayment(false);
+  };
+
+  return (
+    <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+      {!isEditing ? (
+        <div className="space-y-2">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-semibold text-purple-700">💰 Préstamo</span>
+                {loan.note && (
+                  <span className="text-xs text-purple-600">• {loan.note.split('\n')[0]}</span>
+                )}
+              </div>
+              <div className="text-sm font-semibold text-purple-800 mb-1">
+                Saldo pendiente: {formatCLP(loan.amount)}
+              </div>
+              {loan.amount === 0 && (
+                <div className="text-xs text-emerald-600 font-medium">
+                  ✅ Préstamo saldado completamente
+                </div>
+              )}
+              {loan.note && loan.note.includes('\n') && (
+                <div className="mt-2 pt-2 border-t border-purple-200">
+                  <p className="text-xs font-semibold text-purple-700 mb-1">Historial de pagos:</p>
+                  <div className="text-xs text-purple-600 space-y-1">
+                    {loan.note.split('\n').slice(1).map((line, idx) => (
+                      <div key={idx} className="pl-2 border-l-2 border-purple-300">{line}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="ml-3 px-3 py-1 text-xs font-medium rounded-md border border-purple-500 text-purple-600 hover:bg-purple-100"
+              >
+                ✏️ Editar
+              </button>
+            )}
+          </div>
+          
+          {canEdit && (
+            <div className="mt-3 pt-3 border-t border-purple-200">
+              <p className="text-xs font-semibold text-purple-700 mb-2">Agregar Pago:</p>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="number"
+                  placeholder="Monto"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="border border-purple-300 rounded px-2 py-1 text-xs"
+                />
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className="border border-purple-300 rounded px-2 py-1 text-xs"
+                />
+                <input
+                  type="text"
+                  placeholder="Nota (opcional)"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  className="border border-purple-300 rounded px-2 py-1 text-xs"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAddPayment}
+                disabled={addingPayment || !paymentAmount}
+                className="mt-2 px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+              >
+                {addingPayment ? "Guardando..." : "➕ Agregar Pago"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div>
+            <label className="text-xs text-purple-700 font-medium">Monto del préstamo:</label>
+            <input
+              type="number"
+              value={editAmount}
+              onChange={(e) => setEditAmount(e.target.value)}
+              className="w-full border border-purple-300 rounded px-2 py-1 text-sm mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-purple-700 font-medium">Nota:</label>
+            <textarea
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              className="w-full border border-purple-300 rounded px-2 py-1 text-sm mt-1"
+              rows={3}
+              placeholder="Descripción del préstamo..."
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+            >
+              {saving ? "Guardando..." : "💾 Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditing(false);
+                setEditAmount(loan.amount.toString());
+                setEditNote(loan.note || '');
+              }}
+              className="px-3 py-1 text-xs font-medium rounded-md border border-purple-300 text-purple-600 hover:bg-purple-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type AdjustmentWithPending = SalaryAdjustment & {
@@ -20,6 +219,15 @@ type AdjustmentWithPending = SalaryAdjustment & {
   availableFromDate: Date;
   isAvailableThisWeek: boolean;
 };
+
+interface SalarySettlementPanelProps {
+  technicianId: string;
+  technicianName?: string;
+  baseAmount: number;
+  adjustmentTotal: number;
+  context: "technician" | "admin";
+  onAfterSettlement?: () => void;
+}
 
 export default function SalarySettlementPanel({
   technicianId,
@@ -50,6 +258,12 @@ export default function SalarySettlementPanel({
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [returnedOrders, setReturnedOrders] = useState<any[]>([]);
   const [returnsTotal, setReturnsTotal] = useState(0);
+  // Estado para abonos de préstamos durante la liquidación (se descuentan del total pendiente)
+  const [loanPayments, setLoanPayments] = useState<Record<string, {
+    amount: number;
+    date: string;
+    note: string;
+  }>>({});
 
   const { start: weekStartDate, end: weekEndDate } = currentWeekRange();
   const weekStartISO = weekStartDate.toISOString().slice(0, 10);
@@ -59,10 +273,10 @@ export default function SalarySettlementPanel({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // Consultar si hay liquidaciones registradas para esta semana
-    const { data: settlementsData } = await supabase
+    // Consultar si hay liquidaciones registradas para esta semana (obtener created_at y amount)
+    const { data: settlementsData, error: settlementsError } = await supabase
       .from("salary_settlements")
-      .select("created_at")
+      .select("created_at, amount")
       .eq("technician_id", technicianId)
       .eq("week_start", weekStartISO)
       .order("created_at", { ascending: false });
@@ -71,6 +285,25 @@ export default function SalarySettlementPanel({
     const lastSettlementDate = settlementsData && settlementsData.length > 0
       ? new Date(settlementsData[0].created_at)
       : null;
+    
+    // Calcular settledAmount desde settlementsData
+    if (settlementsError) {
+      console.error("Error cargando liquidaciones:", settlementsError);
+      const msg = settlementsError.message?.toLowerCase() ?? "";
+      if (msg.includes("salary_settlements") || msg.includes("does not exist")) {
+        setSetupWarning((prev) =>
+          prev
+            ? prev
+            : "Para registrar pagos completos ejecuta el script `database/add_salary_settlements.sql` en Supabase."
+        );
+        setSettledAmount(0);
+      } else {
+        setSettledAmount(0);
+      }
+    } else {
+      const totalSettled = (settlementsData ?? []).reduce((sum, s) => sum + (s.amount ?? 0), 0);
+      setSettledAmount(totalSettled);
+    }
 
     async function fetchAdjustments(includeApplications: boolean) {
       const selectClause = includeApplications
@@ -134,6 +367,29 @@ export default function SalarySettlementPanel({
 
     const normalized: AdjustmentWithPending[] = adjustmentsData
       .map((adj) => {
+        // IMPORTANTE: Procesar préstamos de manera completamente separada
+        // Los préstamos NO tienen aplicaciones, NO afectan saldos, solo se muestran para gestión
+        if (adj.type === 'loan') {
+          const createdDate = new Date(adj.created_at);
+          const availableFromDate = adj.available_from
+            ? new Date(adj.available_from)
+            : createdDate;
+          availableFromDate.setHours(0, 0, 0, 0);
+          const isAvailableThisWeek = availableFromDate <= weekEndDate;
+          
+          // Para préstamos, remaining = amount (se actualiza manualmente con pagos)
+          // NO se calcula con aplicaciones porque los préstamos no tienen aplicaciones
+          return {
+            ...adj,
+            appliedTotal: 0, // Préstamos no tienen aplicaciones
+            remaining: adj.amount ?? 0, // Monto actual del préstamo
+            availableFromDate,
+            isAvailableThisWeek,
+            isCurrentWeek: createdDate >= weekStartDate && createdDate <= weekEndDate,
+          };
+        }
+        
+        // Para adelantos y descuentos, calcular normalmente
         const applications = (adj as any)?.applications ?? [];
         const appliedTotal =
           applicationsSupported
@@ -152,7 +408,7 @@ export default function SalarySettlementPanel({
         availableFromDate.setHours(0, 0, 0, 0);
         const isAvailableThisWeek = availableFromDate <= weekEndDate;
         
-        // Log para debugging - mostrar TODOS los ajustes con aplicaciones
+        // Log para debugging - mostrar TODOS los ajustes con aplicaciones (excepto préstamos)
         console.log(`🔍 Ajuste ${adj.id}: monto=${adj.amount}, aplicado=${appliedTotal}, restante=${remaining}`, {
           applications: applications.length,
           aplicaciones: applications,
@@ -220,29 +476,7 @@ export default function SalarySettlementPanel({
       });
       return next;
     });
-    // Cargar liquidaciones registradas para la semana
-    const settlementsResponse = await supabase
-      .from("salary_settlements")
-      .select("amount")
-      .eq("technician_id", technicianId)
-      .eq("week_start", weekStartISO);
-
-    if (settlementsResponse.error) {
-      console.error("Error cargando liquidaciones:", settlementsResponse.error);
-      const msg = settlementsResponse.error.message?.toLowerCase() ?? "";
-      if (msg.includes("salary_settlements") || msg.includes("does not exist")) {
-        setSetupWarning((prev) =>
-          prev
-            ? prev
-            : "Para registrar pagos completos ejecuta el script `database/add_salary_settlements.sql` en Supabase."
-        );
-        setSettledAmount(0);
-      }
-    } else {
-      setSettledAmount(
-        settlementsResponse.data?.reduce((sum, row) => sum + (row.amount ?? 0), 0) ?? 0
-      );
-    }
+    // NOTA: settledAmount ya se calculó arriba desde settlementsData, no necesitamos duplicar la consulta
 
     // Cargar devoluciones y cancelaciones de la semana
     // Solo las creadas después de la última liquidación (si existe)
@@ -290,23 +524,27 @@ export default function SalarySettlementPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [technicianId]);
 
-  // Calcular total de ajustes seleccionados (usando nuevo sistema simplificado)
+  // Calcular total de ajustes seleccionados (solo los que están marcados como selected: true)
+  // IMPORTANTE: Excluir préstamos (type: 'loan') porque no afectan los saldos
   const selectedAdjustmentsTotal = useMemo(
     () =>
       pendingAdjustments.reduce((sum, adj) => {
+        // Excluir préstamos (no afectan saldos)
+        if (adj.type === 'loan') {
+          return sum;
+        }
         if (!adj.isAvailableThisWeek) {
           return sum;
         }
         const selection = selectedAdjustments[adj.id];
+        // Solo contar ajustes que están EXPLÍCITAMENTE seleccionados (selected: true)
         if (selection && selection.selected) {
           return sum + Math.min(Math.max(selection.amount, 0), adj.remaining);
         }
-        // Fallback al sistema anterior si no hay selección nueva
-        const raw = adjustmentDrafts[adj.id];
-        const value = Number.isFinite(raw) ? raw : 0;
-        return sum + Math.min(Math.max(value ?? 0, 0), adj.remaining);
+        // No incluir ajustes no seleccionados
+        return sum;
       }, 0),
-    [pendingAdjustments, selectedAdjustments, adjustmentDrafts]
+    [pendingAdjustments, selectedAdjustments]
   );
 
   const availableAdjustments = useMemo(
@@ -329,16 +567,57 @@ export default function SalarySettlementPanel({
     () => availableAdjustments.reduce((sum, adj) => sum + adj.remaining, 0),
     [availableAdjustments]
   );
+  
+  // Préstamos (separados, no afectan saldos automáticamente, pero pueden tener abonos durante liquidación)
+  const loans = useMemo(
+    () => pendingAdjustments.filter((adj) => adj.type === 'loan'),
+    [pendingAdjustments]
+  );
+  
+  // Calcular total de abonos de préstamos que se pagarán en esta liquidación
+  const loanPaymentsTotal = useMemo(
+    () => Object.values(loanPayments).reduce((sum, payment) => sum + (payment.amount || 0), 0),
+    [loanPayments]
+  );
   const grossAvailable = baseAmount - settledAmount;
   const minPayable = Math.max(grossAvailable - (totalAdjustable + deferredHoldback), 0);
   const maxPayable = Math.max(baseAmount + deferredHoldback, grossAvailable);
-  const netRemaining = Math.max(grossAvailable - (selectedAdjustmentsTotal + deferredHoldback), 0);
+  // IMPORTANTE: netRemaining incluye ajustes SELECCIONADOS y abonos de préstamos
+  // NO incluir deferredHoldback porque son ajustes que no están disponibles esta semana
+  // Si no hay ajustes seleccionados ni abonos, mostrar solo lo que se le debe (grossAvailable)
+  const netRemaining = (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)
+    ? Math.max(grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal, 0)
+    : grossAvailable;
 
-  // Calcular monto a pagar automáticamente basado en selección de ajustes
+  // Calcular monto a pagar automáticamente basado en selección de ajustes y abonos de préstamos
+  // IMPORTANTE: Si no hay ajustes seleccionados ni abonos, mostrar el saldo completo (grossAvailable)
+  // Solo descontar cuando hay ajustes EXPLÍCITAMENTE seleccionados o abonos registrados
+  // NO incluir deferredHoldback porque son ajustes que no están disponibles esta semana
   useEffect(() => {
-    const totalToPay = Math.max(0, grossAvailable - selectedAdjustmentsTotal - deferredHoldback);
+    const totalToPay = (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)
+      ? Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal)
+      : grossAvailable; // Si no hay ajustes seleccionados ni abonos, mostrar todo el saldo
     setCustomAmountInput(totalToPay);
-  }, [grossAvailable, selectedAdjustmentsTotal, deferredHoldback]);
+    
+    // Si es pago mixto y hay ajustes seleccionados, inicializar proporción 50/50
+    if (paymentMethod === "efectivo/transferencia" && (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)) {
+      if (totalToPay > 0 && (cashAmount === 0 && transferAmount === 0)) {
+        setCashAmount(Math.round(totalToPay / 2));
+        setTransferAmount(totalToPay - Math.round(totalToPay / 2));
+      } else if (totalToPay > 0 && cashAmount + transferAmount !== totalToPay) {
+        // Ajustar proporción si el total cambió pero ya había valores
+        const currentTotal = cashAmount + transferAmount;
+        if (currentTotal > 0) {
+          const ratio = totalToPay / currentTotal;
+          setCashAmount(Math.round(cashAmount * ratio));
+          setTransferAmount(totalToPay - Math.round(cashAmount * ratio));
+    } else {
+          setCashAmount(Math.round(totalToPay / 2));
+          setTransferAmount(totalToPay - Math.round(totalToPay / 2));
+      }
+    }
+    }
+  }, [grossAvailable, selectedAdjustmentsTotal, loanPaymentsTotal, paymentMethod]);
 
   // Calcular saldo restante después del pago
   const remainingBalance = useMemo(() => {
@@ -430,9 +709,9 @@ export default function SalarySettlementPanel({
       handleToggleAdjustmentSelection(adjId);
     } else {
       setSelectedAdjustments((prev) => ({
-        ...prev,
+      ...prev,
         [adjId]: { ...prev[adjId], selected: false, amount: 0 },
-      }));
+    }));
     }
   }
 
@@ -505,38 +784,79 @@ export default function SalarySettlementPanel({
   }
 
   async function handleLiquidation() {
-    // Si es pago mixto, validar que ambos montos sumen el total
-    let targetAmount = customAmountInput;
+    // Validar que netRemaining no sea negativo
+    const maxNetRemaining = Math.max(0, netRemaining);
     
+    if (maxNetRemaining <= 0) {
+      setErrorMsg("El técnico no tiene saldo pendiente. No se puede registrar un pago adicional.");
+      return;
+    }
+    
+    // IMPORTANTE: Si hay ajustes seleccionados o abonos de préstamos, 
+    // el monto a pagar debe ser automáticamente el resto disponible
+    // Esto asegura que se descuenten los ajustes y se pague el resto completo
+    let targetAmount = Math.max(0, customAmountInput);
+    
+    // Si hay ajustes seleccionados o abonos, forzar que se pague el resto completo
+    if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+      const calculatedRest = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
+      targetAmount = calculatedRest;
+      setCustomAmountInput(calculatedRest);
+      
+      // Si es pago mixto, ajustar los montos proporcionalmente
     if (paymentMethod === "efectivo/transferencia") {
-      const mixedTotal = cashAmount + transferAmount;
+        // Mantener la proporción si ya hay valores, sino dividir 50/50
+        if (cashAmount > 0 || transferAmount > 0) {
+          const total = Math.max(0, cashAmount) + Math.max(0, transferAmount);
+          if (total > 0) {
+            const cashRatio = Math.max(0, cashAmount) / total;
+            const transferRatio = Math.max(0, transferAmount) / total;
+            setCashAmount(Math.round(calculatedRest * cashRatio));
+            setTransferAmount(Math.round(calculatedRest * transferRatio));
+          } else {
+            setCashAmount(Math.round(calculatedRest / 2));
+            setTransferAmount(calculatedRest - Math.round(calculatedRest / 2));
+          }
+        } else {
+          setCashAmount(Math.round(calculatedRest / 2));
+          setTransferAmount(calculatedRest - Math.round(calculatedRest / 2));
+        }
+      }
+    } else {
+      // Si no hay ajustes seleccionados, usar el monto ingresado manualmente
+      if (paymentMethod === "efectivo/transferencia") {
+        const mixedTotal = Math.max(0, cashAmount) + Math.max(0, transferAmount);
       if (mixedTotal <= 0) {
         setErrorMsg("Debes ingresar al menos un monto en efectivo o transferencia.");
         return;
       }
-      if (mixedTotal > netRemaining) {
-        setErrorMsg(`El total de efectivo + transferencia no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
+        if (mixedTotal > maxNetRemaining) {
+          setErrorMsg(`El total de efectivo + transferencia no puede exceder el total a liquidar (${formatCLP(maxNetRemaining)}).`);
         return;
       }
-      // Usar el total mixto como monto a liquidar
       targetAmount = mixedTotal;
       setCustomAmountInput(mixedTotal);
     } else {
       // Para efectivo o transferencia individual, validar que no exceda el total a liquidar
-      if (targetAmount > netRemaining) {
-        setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
+        if (targetAmount > maxNetRemaining) {
+          setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(maxNetRemaining)}).`);
         return;
+        }
       }
     }
     
-    // Permitir pagos parciales (no requiere que sea exactamente minPayable o maxPayable)
+    // Validar que el monto a pagar sea mayor a 0
     if (targetAmount <= 0) {
+      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+        setErrorMsg("No hay monto restante para pagar después de descontar los ajustes seleccionados.");
+      } else {
       setErrorMsg("Debes ingresar un monto mayor a 0 para liquidar.");
+      }
       return;
     }
     
-    if (targetAmount > netRemaining) {
-      setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(netRemaining)}).`);
+    if (targetAmount > maxNetRemaining) {
+      setErrorMsg(`El monto no puede exceder el total a liquidar (${formatCLP(maxNetRemaining)}).`);
       return;
     }
     setErrorMsg(null);
@@ -559,11 +879,11 @@ export default function SalarySettlementPanel({
       .map((adj) => {
         const selection = selectedAdjustments[adj.id];
         if (selection && selection.selected && selection.amount > 0) {
-          return {
-            adjustment_id: adj.id,
-            technician_id: technicianId,
+      return {
+        adjustment_id: adj.id,
+        technician_id: technicianId,
             applied_amount: Math.min(selection.amount, adj.remaining),
-          };
+      };
         }
         return null;
       })
@@ -620,9 +940,47 @@ export default function SalarySettlementPanel({
       carryOverSummary.push({ original_id: item.adj.id, amount: item.leftover });
     }
 
+    // Procesar abonos de préstamos antes de registrar la liquidación
+    const loanPaymentPromises = Object.entries(loanPayments).map(async ([loanId, payment]) => {
+      if (payment.amount <= 0) return;
+      
+      const loan = loans.find(l => l.id === loanId);
+      if (!loan) return;
+      
+      const newAmount = Math.max(0, loan.amount - payment.amount);
+      const paymentDate = payment.date || new Date().toISOString().slice(0, 10);
+      const paymentNote = `Abono de ${formatCLP(payment.amount)} el ${paymentDate}${payment.note ? ` - ${payment.note}` : ''}`;
+      const updatedNote = loan.note 
+        ? `${loan.note}\n${paymentNote}`
+        : paymentNote;
+      
+      const { error: loanError } = await supabase
+        .from("salary_adjustments")
+        .update({
+          amount: newAmount,
+          note: updatedNote
+        })
+        .eq("id", loanId);
+      
+      if (loanError) {
+        console.error(`Error actualizando préstamo ${loanId}:`, loanError);
+        throw new Error(`Error al registrar abono del préstamo: ${loanError.message}`);
+      }
+    });
+    
+    try {
+      await Promise.all(loanPaymentPromises);
+    } catch (error) {
+      console.error("Error procesando abonos de préstamos:", error);
+      setErrorMsg(error instanceof Error ? error.message : "Error al procesar abonos de préstamos");
+      setSaving(false);
+      return;
+    }
+
     const detailsPayload = {
       base_amount: baseAmount,
       selected_adjustments_total: selectedAdjustmentsTotal,
+      loan_payments_total: loanPaymentsTotal,
       settled_amount: targetAmount,
       adjustments: pendingAdjustments.map((adj) => {
         const applied = appliedById[adj.id] ?? 0;
@@ -647,7 +1005,7 @@ export default function SalarySettlementPanel({
         },
       }),
     };
-
+    
     const settlementData = {
       technician_id: technicianId,
       week_start: weekStartISO,
@@ -701,8 +1059,8 @@ export default function SalarySettlementPanel({
       console.warn("Función transaccional no disponible, usando método antiguo:", rpcError);
       // Fallback: usar método antiguo
       const { data, error } = await supabase
-        .from("salary_settlements")
-        .insert(settlementData)
+      .from("salary_settlements")
+      .insert(settlementData)
         .select();
       
       insertedData = data;
@@ -801,6 +1159,9 @@ export default function SalarySettlementPanel({
       // Continuar de todas formas
     }
 
+    // Limpiar abonos de préstamos después de guardar
+    setLoanPayments({});
+
     setSuccessMsg(`✅ Liquidación registrada correctamente. ID: ${savedSettlementId} | Monto: ${formatCLP(targetAmount)} | Técnico: ${technicianName || technicianId}`);
     setPaymentMethod("efectivo");
     setCashAmount(0);
@@ -828,10 +1189,17 @@ export default function SalarySettlementPanel({
           <p className="text-lg font-semibold text-emerald-600">${formatAmount(baseAmount)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Descuentos</p>
-          <p className="text-lg font-semibold text-slate-700">
-            -${formatAmount(selectedAdjustmentsTotal)}
+          <p className="text-xs text-slate-500">
+            {selectedAdjustmentsTotal > 0 ? "Descuentos seleccionados" : "Descuentos disponibles"}
           </p>
+          <p className="text-lg font-semibold text-slate-700">
+            {selectedAdjustmentsTotal > 0 ? `-${formatAmount(selectedAdjustmentsTotal)}` : `$${formatAmount(totalAdjustable)}`}
+          </p>
+          {selectedAdjustmentsTotal === 0 && totalAdjustable > 0 && (
+            <p className="text-xs text-amber-600 mt-1">
+              ↓ Selecciona adelantos abajo para descontar
+            </p>
+          )}
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
           <p className="text-xs text-slate-500">Devoluciones</p>
@@ -841,8 +1209,15 @@ export default function SalarySettlementPanel({
           <p className="text-lg font-semibold text-sky-600">${formatAmount(returnsTotal)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
-          <p className="text-xs text-slate-500">Total a liquidar</p>
+          <p className="text-xs text-slate-500">
+            {selectedAdjustmentsTotal > 0 ? "Total a liquidar" : "Total pendiente"}
+          </p>
           <p className="text-lg font-semibold text-brand">${formatAmount(netRemaining)}</p>
+          {selectedAdjustmentsTotal === 0 && totalAdjustable > 0 && (
+            <p className="text-xs text-slate-500 mt-1">
+              Selecciona adelantos abajo para ver el total con descuentos
+            </p>
+          )}
         </div>
       </div>
       {deferredHoldback > 0 && (
@@ -935,17 +1310,27 @@ export default function SalarySettlementPanel({
                   <input
                     type="number"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={customAmountInput}
+                    value={Math.max(0, customAmountInput)}
                     min={0}
-                    max={netRemaining}
-                    disabled={false}
+                    max={Math.max(0, netRemaining)}
+                    disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
                     onChange={(e) => {
+                      // Si hay ajustes seleccionados, no permitir modificar manualmente
+                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                        return;
+                      }
                       const amount = Number(e.target.value) || 0;
-                      const clamped = Math.min(amount, netRemaining);
+                      const maxAmount = Math.max(0, netRemaining);
+                      const clamped = Math.max(0, Math.min(amount, maxAmount));
                       setCustomAmountInput(clamped);
                     }}
                   />
                 </label>
+                {(selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) && (
+                  <p className="text-xs text-amber-600 font-medium mt-1">
+                    💡 El monto se calcula automáticamente después de descontar los ajustes seleccionados
+                  </p>
+                )}
                 {customAmountInput > 0 && (
                   <div className="space-y-1">
                     <p className="text-xs text-emerald-600 font-medium">
@@ -972,17 +1357,27 @@ export default function SalarySettlementPanel({
                   <input
                     type="number"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={customAmountInput}
+                    value={Math.max(0, customAmountInput)}
                     min={0}
-                    max={netRemaining}
-                    disabled={false}
+                    max={Math.max(0, netRemaining)}
+                    disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
                     onChange={(e) => {
+                      // Si hay ajustes seleccionados, no permitir modificar manualmente
+                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                        return;
+                      }
                       const amount = Number(e.target.value) || 0;
-                      const clamped = Math.min(amount, netRemaining);
+                      const maxAmount = Math.max(0, netRemaining);
+                      const clamped = Math.max(0, Math.min(amount, maxAmount));
                       setCustomAmountInput(clamped);
                     }}
                   />
                 </label>
+                {(selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) && (
+                  <p className="text-xs text-amber-600 font-medium mt-1">
+                    💡 El monto se calcula automáticamente después de descontar los ajustes seleccionados
+                  </p>
+                )}
                 {customAmountInput > 0 && (
                   <div className="space-y-1">
                     <p className="text-xs text-emerald-600 font-medium">
@@ -1009,18 +1404,29 @@ export default function SalarySettlementPanel({
                   <input
                     type="number"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={cashAmount}
+                    value={Math.max(0, cashAmount)}
                     min={0}
-                    max={netRemaining}
+                    max={Math.max(0, netRemaining)}
                     onChange={(e) => {
                       const cash = Number(e.target.value) || 0;
-                      const maxCash = Math.min(cash, netRemaining);
-                      setCashAmount(maxCash);
-                      const remaining = Math.max(0, netRemaining - maxCash);
-                      // Ajustar transferAmount si excede el restante
-                      const adjustedTransfer = Math.min(transferAmount, remaining);
-                      setTransferAmount(adjustedTransfer);
-                      setCustomAmountInput(maxCash + adjustedTransfer);
+                      const maxNetRemaining = Math.max(0, netRemaining);
+                      // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
+                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                        const totalFixed = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
+                        const maxCash = Math.max(0, Math.min(cash, totalFixed));
+                        setCashAmount(maxCash);
+                        const remaining = Math.max(0, totalFixed - maxCash);
+                        setTransferAmount(remaining);
+                        setCustomAmountInput(totalFixed);
+                      } else {
+                        // Sin ajustes, comportamiento normal
+                        const maxCash = Math.max(0, Math.min(cash, maxNetRemaining));
+                        setCashAmount(maxCash);
+                        const remaining = Math.max(0, maxNetRemaining - maxCash);
+                        const adjustedTransfer = Math.min(Math.max(0, transferAmount), remaining);
+                        setTransferAmount(adjustedTransfer);
+                        setCustomAmountInput(Math.max(0, maxCash + adjustedTransfer));
+                      }
                     }}
                   />
                   {cashAmount > 0 && (
@@ -1034,15 +1440,30 @@ export default function SalarySettlementPanel({
                   <input
                     type="number"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={transferAmount}
+                    value={Math.max(0, transferAmount)}
                     min={0}
-                    max={Math.max(0, netRemaining - cashAmount)}
+                    max={Math.max(0, Math.max(0, netRemaining) - Math.max(0, cashAmount))}
+                    disabled={netRemaining <= 0}
                     onChange={(e) => {
                       const transfer = Number(e.target.value) || 0;
-                      const maxTransfer = Math.max(0, netRemaining - cashAmount);
-                      const adjustedTransfer = Math.min(transfer, maxTransfer);
-                      setTransferAmount(adjustedTransfer);
-                      setCustomAmountInput(cashAmount + adjustedTransfer);
+                      const maxNetRemaining = Math.max(0, netRemaining);
+                      // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
+                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                        const totalFixed = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
+                        const maxTransfer = Math.max(0, totalFixed - Math.max(0, cashAmount));
+                        const adjustedTransfer = Math.max(0, Math.min(transfer, maxTransfer));
+                        setTransferAmount(adjustedTransfer);
+                        const remainingCash = Math.max(0, totalFixed - adjustedTransfer);
+                        setCashAmount(remainingCash);
+                        setCustomAmountInput(totalFixed);
+                      } else {
+                        // Sin ajustes, comportamiento normal
+                        const maxCash = Math.max(0, cashAmount);
+                        const maxTransfer = Math.max(0, maxNetRemaining - maxCash);
+                        const adjustedTransfer = Math.max(0, Math.min(transfer, maxTransfer));
+                        setTransferAmount(adjustedTransfer);
+                        setCustomAmountInput(Math.max(0, maxCash + adjustedTransfer));
+                      }
                     }}
                   />
                 </label>
@@ -1102,7 +1523,7 @@ export default function SalarySettlementPanel({
       )}
 
       {/* Mostrar TODOS los ajustes, separando pendientes de saldados */}
-      <div className="space-y-3">
+        <div className="space-y-3">
         {/* DEBUG: Mostrar información de ajustes cargados */}
         {process.env.NODE_ENV === 'development' && pendingAdjustments.length > 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-md p-2 text-xs">
@@ -1129,17 +1550,17 @@ export default function SalarySettlementPanel({
           </div>
         )}
         
-        {/* Ajustes pendientes (remaining > 0) */}
-        {pendingAdjustments.filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek).length > 0 && (
+        {/* Ajustes pendientes (remaining > 0, excluir préstamos y ajustes saldados) */}
+        {pendingAdjustments.filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek && adj.type !== 'loan').length > 0 && (
           <>
-            <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700">
-                Adelantos y Descuentos Pendientes ({pendingAdjustments.filter(a => a.remaining > 0 && a.isAvailableThisWeek).length})
-              </span>
+                Adelantos y Descuentos Pendientes ({pendingAdjustments.filter(a => a.remaining > 0 && a.isAvailableThisWeek && a.type !== 'loan').length})
+            </span>
               <span className="text-sm text-slate-600 font-medium">
                 Total a descontar: <span className="text-red-600">{formatAmount(selectedAdjustmentsTotal)}</span>
-              </span>
-            </div>
+            </span>
+          </div>
             
             <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">
               <p className="text-xs text-blue-800">
@@ -1148,17 +1569,17 @@ export default function SalarySettlementPanel({
               </p>
             </div>
 
-            <div className="space-y-2">
+          <div className="space-y-2">
               {pendingAdjustments
-                .filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek)
+                .filter(adj => adj.remaining > 0 && adj.isAvailableThisWeek && adj.type !== 'loan')
                 .map((adj) => {
                 const selection = selectedAdjustments[adj.id] || { selected: false, amount: adj.remaining };
                 const isSelected = selection.selected;
                 const amountToDeduct = isSelected ? selection.amount : 0;
                 
-                return (
-                  <div
-                    key={adj.id}
+              return (
+                <div
+                  key={adj.id}
                     className={`bg-white border-2 rounded-lg p-4 transition-all ${
                       isSelected ? "border-blue-500 bg-blue-50" : "border-slate-200"
                     }`}
@@ -1177,23 +1598,23 @@ export default function SalarySettlementPanel({
                       {/* Información del ajuste */}
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span
+                      <span
                             className={`font-semibold text-sm ${
-                              adj.type === "advance" ? "text-blue-600" : "text-red-600"
-                            }`}
-                          >
+                          adj.type === "advance" ? "text-blue-600" : "text-red-600"
+                        }`}
+                      >
                             {adj.type === "advance" ? "💰 Adelanto" : "📉 Descuento"}
-                          </span>
+                      </span>
                           {adj.note && (
                             <span className="text-xs text-slate-500">• {adj.note}</span>
-                          )}
-                        </div>
+                    )}
+                  </div>
                         
                         <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-2">
                           <div>
                             <span className="text-slate-500">Monto original:</span>{" "}
                             <span className="font-semibold">{formatAmount(adj.amount)}</span>
-                          </div>
+                    </div>
                           <div>
                             <span className="text-slate-500">Pendiente:</span>{" "}
                             <span className="font-semibold text-slate-900">{formatAmount(adj.remaining)}</span>
@@ -1206,12 +1627,12 @@ export default function SalarySettlementPanel({
                             <label className="block text-xs font-medium text-slate-700 mb-1">
                               Monto a descontar (puede ser parcial):
                             </label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={0}
-                                max={adj.remaining}
-                                step={1000}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={adj.remaining}
+                          step={1000}
                                 value={amountToDeduct}
                                 onChange={(e) => handleAdjustmentAmountChange(adj.id, e.target.value)}
                                 className="w-32 border border-slate-300 rounded-md px-3 py-2 text-sm font-medium"
@@ -1257,19 +1678,20 @@ export default function SalarySettlementPanel({
         )}
 
         {/* Ajustes completamente saldados (remaining = 0) - solo para ver/eliminar */}
-        {pendingAdjustments.filter(adj => adj.remaining <= 0).length > 0 && (
+        {/* Ajustes Saldados - Ocultar en modal, solo aparecen en historial */}
+        {false && pendingAdjustments.filter(adj => adj.remaining <= 0).length > 0 && (
           <div className="mt-4 pt-4 border-t border-slate-300">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-slate-500 uppercase">
                 Ajustes Saldados ({pendingAdjustments.filter(adj => adj.remaining <= 0).length})
               </p>
               <p className="text-xs text-slate-400">
-                Estos ajustes ya fueron completamente aplicados
+                Estos ajustes ya fueron completamente aplicados (ver historial)
               </p>
             </div>
             <div className="space-y-2">
               {pendingAdjustments
-                .filter(adj => adj.remaining <= 0)
+                .filter(adj => adj.remaining <= 0 && adj.type !== 'loan')
                 .map((adj) => (
                   <div
                     key={adj.id}
@@ -1296,21 +1718,21 @@ export default function SalarySettlementPanel({
                       </div>
                     </div>
                     {canEditAdjustments && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAdjustment(adj.id)}
-                        disabled={deletingAdjustmentId === adj.id}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAdjustment(adj.id)}
+                          disabled={deletingAdjustmentId === adj.id}
                         className="flex-shrink-0 ml-3 px-3 py-1 text-xs font-medium rounded-md border border-red-500 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Eliminar ajuste"
-                      >
+                          title="Eliminar ajuste"
+                        >
                         {deletingAdjustmentId === adj.id ? "Eliminando..." : "🗑️ Eliminar"}
-                      </button>
+                        </button>
                     )}
-                  </div>
+                      </div>
                 ))}
             </div>
-          </div>
-        )}
+                      </div>
+                    )}
 
         {/* Mostrar ajustes diferidos (no disponibles esta semana) */}
         {pendingAdjustments.filter(adj => !adj.isAvailableThisWeek && adj.remaining > 0).length > 0 && (
@@ -1336,8 +1758,140 @@ export default function SalarySettlementPanel({
           </div>
         )}
 
+        {/* Sección de Préstamos (pueden tener abonos que se descuentan del total pendiente) */}
+        {loans.length > 0 && (
+          <div className="mt-6 pt-6 border-t-2 border-purple-200">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-purple-700 flex items-center gap-2">
+                💰 Préstamos ({loans.length})
+              </h4>
+              <p className="text-xs text-purple-600">
+                Puedes registrar abonos que se descontarán del total pendiente
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              {loans.map((loan) => {
+                const payment = loanPayments[loan.id];
+                const paymentAmount = payment?.amount || 0;
+                
+                return (
+                  <div key={loan.id} className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-purple-700">💰 Préstamo</span>
+                          {loan.note && (
+                            <span className="text-xs text-purple-600">• {loan.note.split('\n')[0]}</span>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold text-purple-800 mb-1">
+                          Saldo pendiente: {formatCLP(loan.amount)}
+                        </div>
+                        {paymentAmount > 0 && (
+                          <div className="text-xs text-emerald-600 font-medium mt-1">
+                            ✓ Abono registrado: {formatCLP(paymentAmount)} (se descontará del total)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {canEditAdjustments && (
+                      <div className="mt-3 pt-3 border-t border-purple-200">
+                        <p className="text-xs font-semibold text-purple-700 mb-2">Registrar Abono en esta Liquidación:</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="number"
+                            placeholder="Monto del abono"
+                            value={payment?.amount || ''}
+                            onChange={(e) => {
+                              const amount = parseFloat(e.target.value) || 0;
+                              setLoanPayments(prev => ({
+                                ...prev,
+                                [loan.id]: {
+                                  amount: Math.max(0, Math.min(amount, loan.amount)),
+                                  date: payment?.date || new Date().toISOString().slice(0, 10),
+                                  note: payment?.note || ''
+                                }
+                              }));
+                            }}
+                            className="border border-purple-300 rounded px-2 py-1 text-xs"
+                            min="0"
+                            max={loan.amount}
+                          />
+                          <input
+                            type="date"
+                            value={payment?.date || new Date().toISOString().slice(0, 10)}
+                            onChange={(e) => {
+                              setLoanPayments(prev => ({
+                                ...prev,
+                                [loan.id]: {
+                                  amount: payment?.amount || 0,
+                                  date: e.target.value,
+                                  note: payment?.note || ''
+                                }
+                              }));
+                            }}
+                            className="border border-purple-300 rounded px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Nota (opcional)"
+                            value={payment?.note || ''}
+                            onChange={(e) => {
+                              setLoanPayments(prev => ({
+                                ...prev,
+                                [loan.id]: {
+                                  amount: payment?.amount || 0,
+                                  date: payment?.date || new Date().toISOString().slice(0, 10),
+                                  note: e.target.value
+                                }
+                              }));
+                            }}
+                            className="border border-purple-300 rounded px-2 py-1 text-xs"
+                          />
+                        </div>
+                        {paymentAmount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLoanPayments(prev => {
+                                const next = { ...prev };
+                                delete next[loan.id];
+                                return next;
+                              });
+                            }}
+                            className="mt-2 px-3 py-1 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50"
+                          >
+                            ✖️ Eliminar abono
+                          </button>
+                        )}
+                        <p className="text-xs text-purple-600 mt-2">
+                          💡 Este abono se descontará del total pendiente y se registrará en el préstamo
+                        </p>
+                      </div>
+                    )}
+                </div>
+              );
+            })}
+          </div>
+            
+            {loanPaymentsTotal > 0 && (
+              <div className="mt-3 pt-3 border-t border-purple-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-semibold text-purple-700">Total de abonos de préstamos:</span>
+                  <span className="text-sm font-bold text-purple-800">{formatCLP(loanPaymentsTotal)}</span>
+                </div>
+                <p className="text-xs text-purple-600 mt-1">
+                  Este monto se descontará del total pendiente junto con los adelantos seleccionados
+                </p>
+              </div>
+            )}
+        </div>
+      )}
+
         {/* Mensaje si no hay ajustes */}
-        {pendingAdjustments.length === 0 && (
+        {pendingAdjustments.filter(adj => adj.type !== 'loan').length === 0 && loans.length === 0 && (
           <div className="text-sm text-slate-500 bg-white border border-dashed border-slate-300 rounded-md p-4">
             {netRemaining <= 0
               ? "No hay saldo pendiente. Todo está liquidado 🎉"
@@ -1346,6 +1900,55 @@ export default function SalarySettlementPanel({
                 )} usando el botón.`}
           </div>
         )}
+        
+        {/* Mostrar Total Pendiente al final */}
+        <div className="mt-4 pt-4 border-t-2 border-slate-300">
+          {netRemaining > 0 ? (
+            <div className="flex justify-between items-center bg-slate-50 rounded-md p-3">
+              <span className="text-sm font-semibold text-slate-700">Total Pendiente:</span>
+              <span className="text-lg font-bold text-amber-600">{formatAmount(netRemaining)}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-3">
+              <span className="text-sm font-semibold text-amber-700">Estado del Saldo:</span>
+              <span className="text-lg font-bold text-amber-600">CLP $0</span>
+            </div>
+          )}
+          {netRemaining <= 0 && grossAvailable < 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-xs text-red-700 font-medium">
+                ⚠️ El técnico ya recibió más de lo que ganó. Saldo negativo: {formatAmount(Math.abs(grossAvailable))}
+              </p>
+              <p className="text-xs text-red-600 mt-1">
+                No se puede registrar un pago adicional. El monto a pagar es 0.
+              </p>
+            </div>
+          )}
+          {netRemaining > 0 && (
+            <div className="mt-2 space-y-1">
+              {selectedAdjustmentsTotal === 0 && loanPaymentsTotal === 0 && totalAdjustable > 0 && (
+                <p className="text-xs text-slate-500 text-center">
+                  💡 Selecciona adelantos arriba o registra abonos de préstamos para descontar del total
+                </p>
+              )}
+              {selectedAdjustmentsTotal > 0 && (
+                <p className="text-xs text-emerald-600 text-center font-medium">
+                  ✓ Descuentos de adelantos: {formatAmount(selectedAdjustmentsTotal)}
+                </p>
+              )}
+              {loanPaymentsTotal > 0 && (
+                <p className="text-xs text-purple-600 text-center font-medium">
+                  ✓ Abonos de préstamos: {formatAmount(loanPaymentsTotal)}
+                </p>
+              )}
+              {(selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) && (
+                <p className="text-xs text-slate-600 text-center">
+                  Total descontado: {formatAmount(selectedAdjustmentsTotal + loanPaymentsTotal)}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {errorMsg && <div className="text-xs text-red-600">{errorMsg}</div>}
