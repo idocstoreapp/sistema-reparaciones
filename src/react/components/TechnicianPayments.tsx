@@ -179,10 +179,16 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           ? new Date(settlementsData[0].created_at)
           : null;
 
-        // Consulta para órdenes - excluir las liquidadas
+        // Consulta para órdenes - IMPORTANTE: NO excluir las liquidadas
+        // baseAmount debe ser el TOTAL ganado de la semana, independientemente de liquidaciones
         // ⚠️ CAMBIO CRÍTICO: Usar payout_week/payout_year para órdenes pagadas
         // IMPORTANTE: También buscar por paid_at para capturar semanas que cruzan el año
-        let ordersQuery1 = supabase
+        const { start, end } = currentWeekRange();
+        const startUTC = dateToUTCStart(start);
+        const endUTC = dateToUTCEnd(end);
+        
+        // Consulta 1: Por payout_week/payout_year (método principal)
+        const ordersQuery1 = supabase
           .from("orders")
           .select("id, commission_amount")
           .eq("technician_id", tech.id)
@@ -190,12 +196,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           .eq("payout_week", currentPayout.week)
           .eq("payout_year", currentPayout.year);
         
-        // Consulta alternativa por paid_at dentro del rango de la semana
-        const { start, end } = currentWeekRange();
-        const startUTC = dateToUTCStart(start);
-        const endUTC = dateToUTCEnd(end);
-        
-        let ordersQuery2 = supabase
+        // Consulta 2: Por paid_at dentro del rango de la semana (fallback)
+        const ordersQuery2 = supabase
           .from("orders")
           .select("id, commission_amount")
           .eq("technician_id", tech.id)
@@ -203,12 +205,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           .gte("paid_at", startUTC.toISOString())
           .lte("paid_at", endUTC.toISOString());
         
-        if (lastSettlementDate) {
-          ordersQuery1 = ordersQuery1.gte("paid_at", lastSettlementDate.toISOString());
-          ordersQuery2 = ordersQuery2.gte("paid_at", lastSettlementDate.toISOString());
-        }
-        
         // Ejecutar ambas consultas y combinar resultados
+        // IMPORTANTE: NO filtrar por lastSettlementDate aquí porque baseAmount debe ser el total ganado
         const [result1, result2] = await Promise.all([
           ordersQuery1,
           ordersQuery2

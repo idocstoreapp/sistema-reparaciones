@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
-import { formatCLP } from "@/lib/currency";
+import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import type { SalaryAdjustment, SalaryAdjustmentApplication } from "@/types";
 
 // Componente para gestionar préstamos
@@ -133,10 +133,14 @@ function LoanManagementCard({
               <p className="text-xs font-semibold text-purple-700 mb-2">Agregar Pago:</p>
               <div className="grid grid-cols-3 gap-2">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="Monto"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  value={formatCLPInput(paymentAmount ? parseCLPInput(paymentAmount) : "")}
+                  onChange={(e) => {
+                    const parsed = parseCLPInput(e.target.value);
+                    setPaymentAmount(parsed > 0 ? parsed.toString() : "");
+                  }}
                   className="border border-purple-300 rounded px-2 py-1 text-xs"
                 />
                 <input
@@ -169,9 +173,13 @@ function LoanManagementCard({
           <div>
             <label className="text-xs text-purple-700 font-medium">Monto del préstamo:</label>
             <input
-              type="number"
-              value={editAmount}
-              onChange={(e) => setEditAmount(e.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={formatCLPInput(editAmount ? parseCLPInput(editAmount) : "")}
+              onChange={(e) => {
+                const parsed = parseCLPInput(e.target.value);
+                setEditAmount(parsed > 0 ? parsed.toString() : "");
+              }}
               className="w-full border border-purple-300 rounded px-2 py-1 text-sm mt-1"
             />
           </div>
@@ -251,7 +259,7 @@ export default function SalarySettlementPanel({
   const [applicationsSupported, setApplicationsSupported] = useState(true);
   const [setupWarning, setSetupWarning] = useState<string | null>(null);
   const [settledAmount, setSettledAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "efectivo/transferencia">("efectivo");
+  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "efectivo/transferencia" | "">("");
   const [cashAmount, setCashAmount] = useState(0);
   const [transferAmount, setTransferAmount] = useState(0);
   const [customAmountInput, setCustomAmountInput] = useState(0);
@@ -273,10 +281,10 @@ export default function SalarySettlementPanel({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // Consultar si hay liquidaciones registradas para esta semana (obtener created_at y amount)
+    // Consultar si hay liquidaciones registradas para esta semana (obtener created_at, amount y details)
     const { data: settlementsData, error: settlementsError } = await supabase
       .from("salary_settlements")
-      .select("created_at, amount")
+      .select("created_at, amount, details")
       .eq("technician_id", technicianId)
       .eq("week_start", weekStartISO)
       .order("created_at", { ascending: false });
@@ -287,8 +295,10 @@ export default function SalarySettlementPanel({
       : null;
     
     // Calcular settledAmount desde settlementsData
+    // IMPORTANTE: También debemos considerar los abonos de préstamos que se pagaron
+    // Los abonos de préstamos están en details->loan_payments_total de cada settlement
     if (settlementsError) {
-      console.error("Error cargando liquidaciones:", settlementsError);
+      console.error("❌ [SalarySettlementPanel] Error cargando liquidaciones:", settlementsError);
       const msg = settlementsError.message?.toLowerCase() ?? "";
       if (msg.includes("salary_settlements") || msg.includes("does not exist")) {
         setSetupWarning((prev) =>
@@ -301,8 +311,44 @@ export default function SalarySettlementPanel({
         setSettledAmount(0);
       }
     } else {
+      // Sumar los pagos directos
       const totalSettled = (settlementsData ?? []).reduce((sum, s) => sum + (s.amount ?? 0), 0);
-      setSettledAmount(totalSettled);
+      
+      // Sumar los adelantos/descuentos descontados en liquidaciones
+      const totalAdjustmentsDeducted = (settlementsData ?? []).reduce((sum, s) => {
+        const adjustmentsTotal = s.details?.selected_adjustments_total;
+        return sum + (typeof adjustmentsTotal === 'number' ? adjustmentsTotal : 0);
+      }, 0);
+      
+      // Sumar los abonos de préstamos pagados en liquidaciones
+      const totalLoanPayments = (settlementsData ?? []).reduce((sum, s) => {
+        const loanPaymentsTotal = s.details?.loan_payments_total;
+        return sum + (typeof loanPaymentsTotal === 'number' ? loanPaymentsTotal : 0);
+      }, 0);
+      
+      // El settledAmount debe incluir:
+      // - Pagos directos (amount)
+      // - Ajustes descontados (selected_adjustments_total)
+      // - Abonos de préstamos (loan_payments_total)
+      // Esto representa el total que se le liquidó al técnico
+      const finalSettledAmount = totalSettled + totalAdjustmentsDeducted + totalLoanPayments;
+      
+      console.log("💰 [SalarySettlementPanel] Cálculo de settledAmount:", {
+        settlementsCount: settlementsData?.length || 0,
+        totalSettled,
+        totalAdjustmentsDeducted,
+        totalLoanPayments,
+        finalSettledAmount,
+        calculation: `${totalSettled} + ${totalAdjustmentsDeducted} + ${totalLoanPayments} = ${finalSettledAmount}`,
+        settlements: settlementsData?.map(s => ({
+          amount: s.amount,
+          selected_adjustments_total: s.details?.selected_adjustments_total,
+          loan_payments_total: s.details?.loan_payments_total,
+          details: s.details
+        }))
+      });
+      
+      setSettledAmount(finalSettledAmount);
     }
 
     async function fetchAdjustments(includeApplications: boolean) {
@@ -579,7 +625,50 @@ export default function SalarySettlementPanel({
     () => Object.values(loanPayments).reduce((sum, payment) => sum + (payment.amount || 0), 0),
     [loanPayments]
   );
+  
+  // Calcular ajustes ya aplicados EN ESTA SEMANA (no préstamos, solo adelantos y descuentos)
+  // IMPORTANTE: Solo contar aplicaciones de esta semana, no de semanas anteriores
+  const totalAppliedAdjustments = useMemo(
+    () => pendingAdjustments
+      .filter((adj) => adj.type !== 'loan') // Excluir préstamos
+      .reduce((sum, adj) => {
+        // Solo contar aplicaciones de esta semana
+        const thisWeekApplications = (adj as any)?.applications?.filter((app: any) => {
+          if (!app.week_start) return false;
+          return app.week_start === weekStartISO;
+        }) || [];
+        const thisWeekApplied = thisWeekApplications.reduce(
+          (appSum: number, app: any) => appSum + (app.applied_amount ?? 0),
+          0
+        );
+        return sum + thisWeekApplied;
+      }, 0),
+    [pendingAdjustments, weekStartISO]
+  );
+  
+  // grossAvailable debe ser: baseAmount - settledAmount
+  // NO restar totalAppliedAdjustments aquí porque esos ajustes ya fueron aplicados en liquidaciones anteriores
+  // Si los restamos aquí, estaríamos descontándolos dos veces (una vez en grossAvailable y otra vez en netRemaining)
   const grossAvailable = baseAmount - settledAmount;
+  
+  // Log para debugging
+  console.log("📊 [SalarySettlementPanel] Cálculo de grossAvailable:", {
+    baseAmount,
+    totalAppliedAdjustments,
+    settledAmount,
+    grossAvailable,
+    weekStartISO,
+    calculation: `${baseAmount} - ${settledAmount} = ${grossAvailable}`,
+    note: "totalAppliedAdjustments NO se resta aquí porque ya están incluidos en settledAmount"
+  });
+  
+  // Log adicional para debugging del cálculo de netRemaining
+  console.log("📊 [SalarySettlementPanel] Cálculo de netRemaining:", {
+    grossAvailable,
+    selectedAdjustmentsTotal,
+    loanPaymentsTotal,
+    calculation: `netRemaining = ${grossAvailable} - ${selectedAdjustmentsTotal} - ${loanPaymentsTotal}`
+  });
   const minPayable = Math.max(grossAvailable - (totalAdjustable + deferredHoldback), 0);
   const maxPayable = Math.max(baseAmount + deferredHoldback, grossAvailable);
   // IMPORTANTE: netRemaining incluye ajustes SELECCIONADOS y abonos de préstamos
@@ -862,6 +951,13 @@ export default function SalarySettlementPanel({
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    // Validar que se haya seleccionado un método de pago
+    if (!paymentMethod || (paymentMethod as string) === "") {
+      alert("⚠️ Selecciona medio de pago\n\nDebes seleccionar el método de pago antes de registrar la liquidación.\n\nEsto es importante para llevar un registro correcto de cómo se le pagó al técnico.");
+      setErrorMsg("Debes seleccionar un método de pago antes de registrar la liquidación.");
+      return;
+    }
+
     setSaving(true);
     applyCustomAmount(targetAmount);
 
@@ -1012,13 +1108,24 @@ export default function SalarySettlementPanel({
       amount: targetAmount,
       note: null,
       context,
-      payment_method: paymentMethod,
+      payment_method: paymentMethod as "efectivo" | "transferencia" | "efectivo/transferencia",
       details: detailsPayload,
       created_by: userData?.user?.id ?? null,
     };
     
-    console.log("Guardando liquidación con los siguientes datos:", settlementData);
-    console.log("Aplicaciones a registrar:", applicationsPayload);
+    console.log("💾 [SalarySettlementPanel] Guardando liquidación:", {
+      settlementData,
+      applicationsPayload,
+      selectedAdjustments,
+      selectedAdjustmentsTotal,
+      loanPayments,
+      loanPaymentsTotal,
+      targetAmount,
+      baseAmount,
+      grossAvailable,
+      netRemaining,
+      calculation: `targetAmount = ${targetAmount}, baseAmount = ${baseAmount}, grossAvailable = ${grossAvailable}, netRemaining = ${netRemaining}`
+    });
     
     // Intentar usar función transaccional primero
     let insertedData: any[] | null = null;
@@ -1037,9 +1144,11 @@ export default function SalarySettlementPanel({
       
       if (error) {
         console.warn("Error usando función transaccional, intentando método antiguo:", error);
+        console.error("Detalles del error RPC:", JSON.stringify(error, null, 2));
         // Fallback al método antiguo si la función no existe
         settlementError = error;
       } else if (data) {
+        console.log("✅ Función transaccional ejecutada correctamente. Settlement ID:", data);
         // La función retorna el ID de la liquidación
         const settlementId = data;
         // Obtener los datos completos
@@ -1050,9 +1159,30 @@ export default function SalarySettlementPanel({
           .single();
         
         if (fetchError) {
+          console.error("Error obteniendo datos del settlement:", fetchError);
           settlementError = fetchError;
         } else {
+          console.log("✅ Settlement obtenido:", settlementData);
           insertedData = [settlementData];
+          
+          // Verificar que las aplicaciones se crearon
+          if (applicationsPayload.length > 0) {
+            const { data: applicationsData, error: appsError } = await supabase
+              .from("salary_adjustment_applications")
+              .select("*")
+              .eq("technician_id", technicianId)
+              .eq("week_start", weekStartISO)
+              .order("created_at", { ascending: false })
+              .limit(10);
+            
+            if (appsError) {
+              console.error("Error verificando aplicaciones:", appsError);
+            } else {
+              console.log("✅ Aplicaciones creadas:", applicationsData);
+              console.log("📊 Total aplicaciones encontradas:", applicationsData?.length || 0);
+              console.log("📊 Aplicaciones esperadas:", applicationsPayload.length);
+            }
+          }
         }
       }
     } catch (rpcError: any) {
@@ -1163,7 +1293,7 @@ export default function SalarySettlementPanel({
     setLoanPayments({});
 
     setSuccessMsg(`✅ Liquidación registrada correctamente. ID: ${savedSettlementId} | Monto: ${formatCLP(targetAmount)} | Técnico: ${technicianName || technicianId}`);
-    setPaymentMethod("efectivo");
+    setPaymentMethod(""); // Resetear a "Seleccionar" después de registrar
     setCashAmount(0);
     setTransferAmount(0);
     await loadPendingAdjustments();
@@ -1278,26 +1408,32 @@ export default function SalarySettlementPanel({
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <div className="flex flex-col gap-2">
             <label className="text-xs text-slate-500 flex items-center gap-2">
-              Medio de pago:
+              Medio de pago: <span className="text-red-500">*</span>
               <select
                 className="border border-slate-300 rounded-md px-2 py-1 text-xs"
                 value={paymentMethod}
                 onChange={(e) => {
-                  const newMethod = e.target.value as "efectivo" | "transferencia" | "efectivo/transferencia";
+                  const newMethod = e.target.value as "efectivo" | "transferencia" | "efectivo/transferencia" | "";
                   setPaymentMethod(newMethod);
-                  if (newMethod !== "efectivo/transferencia") {
+                  if (newMethod === "" || newMethod === "efectivo" || newMethod === "transferencia") {
                     setCashAmount(0);
                     setTransferAmount(0);
                     // Si cambia a efectivo o transferencia, resetear el monto
-                    setCustomAmountInput(0);
-                  } else {
+                    if (newMethod !== "") {
+                      setCustomAmountInput(netRemaining);
+                    } else {
+                      setCustomAmountInput(0);
+                    }
+                  } else if (newMethod === "efectivo/transferencia") {
                     // Si cambia a mixto, resetear ambos montos
                     setCashAmount(0);
                     setTransferAmount(0);
                     setCustomAmountInput(0);
                   }
                 }}
+                required
               >
+                <option value="">Seleccionar</option>
                 <option value="efectivo">Efectivo</option>
                 <option value="transferencia">Transferencia</option>
                 <option value="efectivo/transferencia">Efectivo/Transferencia</option>
@@ -1308,20 +1444,19 @@ export default function SalarySettlementPanel({
                 <label className="text-xs text-slate-500 flex flex-col gap-1">
                   Monto en Efectivo:
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={Math.max(0, customAmountInput)}
-                    min={0}
-                    max={Math.max(0, netRemaining)}
+                    value={formatCLPInput(Math.max(0, customAmountInput))}
                     disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
                     onChange={(e) => {
                       // Si hay ajustes seleccionados, no permitir modificar manualmente
                       if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
                         return;
                       }
-                      const amount = Number(e.target.value) || 0;
+                      const parsed = parseCLPInput(e.target.value);
                       const maxAmount = Math.max(0, netRemaining);
-                      const clamped = Math.max(0, Math.min(amount, maxAmount));
+                      const clamped = Math.max(0, Math.min(parsed, maxAmount));
                       setCustomAmountInput(clamped);
                     }}
                   />
@@ -1355,20 +1490,19 @@ export default function SalarySettlementPanel({
                 <label className="text-xs text-slate-500 flex flex-col gap-1">
                   Monto en Transferencia:
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={Math.max(0, customAmountInput)}
-                    min={0}
-                    max={Math.max(0, netRemaining)}
+                    value={formatCLPInput(Math.max(0, customAmountInput))}
                     disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
                     onChange={(e) => {
                       // Si hay ajustes seleccionados, no permitir modificar manualmente
                       if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
                         return;
                       }
-                      const amount = Number(e.target.value) || 0;
+                      const parsed = parseCLPInput(e.target.value);
                       const maxAmount = Math.max(0, netRemaining);
-                      const clamped = Math.max(0, Math.min(amount, maxAmount));
+                      const clamped = Math.max(0, Math.min(parsed, maxAmount));
                       setCustomAmountInput(clamped);
                     }}
                   />
@@ -1402,13 +1536,13 @@ export default function SalarySettlementPanel({
                 <label className="text-xs text-slate-500 flex flex-col gap-1">
                   Monto en Efectivo:
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={Math.max(0, cashAmount)}
-                    min={0}
-                    max={Math.max(0, netRemaining)}
+                    value={formatCLPInput(Math.max(0, cashAmount))}
                     onChange={(e) => {
-                      const cash = Number(e.target.value) || 0;
+                      const parsed = parseCLPInput(e.target.value);
+                      const cash = Math.max(0, parsed);
                       const maxNetRemaining = Math.max(0, netRemaining);
                       // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
                       if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
@@ -1438,14 +1572,14 @@ export default function SalarySettlementPanel({
                 <label className="text-xs text-slate-500 flex flex-col gap-1">
                   Monto en Transferencia:
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
-                    value={Math.max(0, transferAmount)}
-                    min={0}
-                    max={Math.max(0, Math.max(0, netRemaining) - Math.max(0, cashAmount))}
+                    value={formatCLPInput(Math.max(0, transferAmount))}
                     disabled={netRemaining <= 0}
                     onChange={(e) => {
-                      const transfer = Number(e.target.value) || 0;
+                      const parsed = parseCLPInput(e.target.value);
+                      const transfer = Math.max(0, parsed);
                       const maxNetRemaining = Math.max(0, netRemaining);
                       // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
                       if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
@@ -1629,15 +1763,17 @@ export default function SalarySettlementPanel({
                             </label>
                       <div className="flex items-center gap-2">
                         <input
-                          type="number"
-                          min={0}
-                          max={adj.remaining}
-                          step={1000}
-                                value={amountToDeduct}
-                                onChange={(e) => handleAdjustmentAmountChange(adj.id, e.target.value)}
-                                className="w-32 border border-slate-300 rounded-md px-3 py-2 text-sm font-medium"
-                                placeholder="0"
-                              />
+                          type="text"
+                          inputMode="numeric"
+                          value={formatCLPInput(amountToDeduct)}
+                          onChange={(e) => {
+                            const parsed = parseCLPInput(e.target.value);
+                            const clamped = Math.max(0, Math.min(parsed, adj.remaining));
+                            handleAdjustmentAmountChange(adj.id, clamped.toString());
+                          }}
+                          className="w-32 border border-slate-300 rounded-md px-3 py-2 text-sm font-medium"
+                          placeholder="0"
+                        />
                               <span className="text-xs text-slate-500">
                                 de {formatAmount(adj.remaining)} disponible
                               </span>
@@ -1801,15 +1937,17 @@ export default function SalarySettlementPanel({
                         <p className="text-xs font-semibold text-purple-700 mb-2">Registrar Abono en esta Liquidación:</p>
                         <div className="grid grid-cols-3 gap-2">
                           <input
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
                             placeholder="Monto del abono"
-                            value={payment?.amount || ''}
+                            value={formatCLPInput(payment?.amount || 0)}
                             onChange={(e) => {
-                              const amount = parseFloat(e.target.value) || 0;
+                              const parsed = parseCLPInput(e.target.value);
+                              const amount = Math.max(0, Math.min(parsed, loan.amount));
                               setLoanPayments(prev => ({
                                 ...prev,
                                 [loan.id]: {
-                                  amount: Math.max(0, Math.min(amount, loan.amount)),
+                                  amount,
                                   date: payment?.date || new Date().toISOString().slice(0, 10),
                                   note: payment?.note || ''
                                 }
@@ -1966,7 +2104,7 @@ export default function SalarySettlementPanel({
         <button
           type="button"
           onClick={() => void handleLiquidation()}
-          disabled={saving || (paymentMethod === "efectivo/transferencia" ? (cashAmount + transferAmount) <= 0 : customAmountInput <= 0)}
+          disabled={saving || !paymentMethod || (paymentMethod as string) === "" || (paymentMethod === "efectivo/transferencia" ? (cashAmount + transferAmount) <= 0 : customAmountInput <= 0)}
           className="px-4 py-2 text-xs font-semibold rounded-md text-white bg-brand-light hover:bg-white hover:text-brand border border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Guardando..." : "Registrar liquidación"}

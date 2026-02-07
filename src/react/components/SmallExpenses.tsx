@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { formatCLP } from "@/lib/currency";
+import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
 import type { SmallExpense, Branch, Profile } from "@/types";
 
@@ -409,11 +409,13 @@ export default function SmallExpenses({ sucursalId, refreshKey = 0, dateFilter, 
                 Monto (CLP) *
               </label>
               <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={formData.monto}
-                onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
+                type="text"
+                inputMode="numeric"
+                value={formData.monto ? formatCLPInput(parseCLPInput(formData.monto)) : ""}
+                onChange={(e) => {
+                  const parsed = parseCLPInput(e.target.value);
+                  setFormData({ ...formData, monto: parsed > 0 ? parsed.toString() : "" });
+                }}
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 placeholder="0"
                 required

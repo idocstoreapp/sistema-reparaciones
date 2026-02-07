@@ -212,24 +212,23 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       });
 
       // Consulta para ajustes - CARGAR CON APLICACIONES para calcular remaining
+      // IMPORTANTE: Cargar TODOS los ajustes, no filtrar por fecha de creación
+      // Necesitamos todos los ajustes para calcular correctamente totalAppliedAdjustments
+      // (que cuenta solo las aplicaciones de esta semana, no todos los ajustes)
       let adjustmentsQuery = supabase
         .from("salary_adjustments")
         .select("*, applications:salary_adjustment_applications(applied_amount, week_start)")
         .eq("technician_id", technicianId);
       
-      // Si hay liquidación, solo mostrar ajustes creados DESPUÉS de la liquidación
-      // Si NO hay liquidación, mostrar TODOS los ajustes (sin filtro de fecha)
-      if (lastSettlementDate) {
-        adjustmentsQuery = adjustmentsQuery.gte("created_at", lastSettlementDate.toISOString());
-      }
-      // Si no hay liquidación, no aplicar filtro de fecha para mostrar todos los ajustes
+      // NO filtrar por fecha de creación porque necesitamos todos los ajustes
+      // para calcular correctamente las aplicaciones de esta semana
 
       // Consulta para liquidaciones (solo montos)
       // IMPORTANTE: Buscar TODAS las liquidaciones de esta semana, no solo las que coinciden exactamente con week_start
       // Esto es porque el pago puede haberse registrado en una fecha diferente pero corresponder a esta semana
       const { data: settlementsAmounts } = await supabase
         .from("salary_settlements")
-        .select("amount, week_start, created_at")
+        .select("amount, week_start, created_at, details")
         .eq("technician_id", technicianId)
         .eq("week_start", weekStartISO);
 
@@ -244,14 +243,11 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       // Si falla la consulta con aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
       if (adjustmentsError) {
         console.warn("⚠️ No se pudieron cargar aplicaciones, usando monto total:", adjustmentsError);
-        let fallbackQuery = supabase
+        // IMPORTANTE: Cargar TODOS los ajustes, no filtrar por fecha
+        const fallbackQuery = supabase
           .from("salary_adjustments")
           .select("*")
           .eq("technician_id", technicianId);
-        
-        if (lastSettlementDate) {
-          fallbackQuery = fallbackQuery.gte("created_at", lastSettlementDate.toISOString());
-        }
         
         const fallbackResponse = await fallbackQuery.order("created_at", { ascending: false });
         if (!fallbackResponse.error) {
@@ -412,9 +408,41 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
       setLoans((loansData as SalaryAdjustment[]).sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
-      setSettledAmount(
-        (settlementsAmounts as { amount: number }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0
-      );
+      // Calcular settledAmount: suma de todos los pagos realizados
+      // IMPORTANTE: Debe incluir:
+      // 1. amount: el pago directo al técnico (efectivo/transferencia)
+      // 2. selected_adjustments_total: adelantos/descuentos descontados
+      // 3. loan_payments_total: abonos de préstamos descontados
+      // Estos tres valores suman el total que se le liquidó al técnico
+      const totalSettled = (settlementsAmounts as { amount: number; details?: any }[])?.reduce((sum, s) => sum + (s.amount ?? 0), 0) ?? 0;
+      
+      // Sumar los adelantos/descuentos descontados en liquidaciones
+      const totalAdjustmentsDeducted = (settlementsAmounts ?? []).reduce((sum, s) => {
+        const adjustmentsTotal = s.details?.selected_adjustments_total;
+        return sum + (typeof adjustmentsTotal === 'number' ? adjustmentsTotal : 0);
+      }, 0);
+      
+      // Sumar los abonos de préstamos pagados en liquidaciones
+      const totalLoanPayments = (settlementsAmounts ?? []).reduce((sum, s) => {
+        const loanPaymentsTotal = s.details?.loan_payments_total;
+        return sum + (typeof loanPaymentsTotal === 'number' ? loanPaymentsTotal : 0);
+      }, 0);
+      
+      // El settledAmount debe incluir:
+      // - Pagos directos (amount)
+      // - Ajustes descontados (selected_adjustments_total)
+      // - Abonos de préstamos (loan_payments_total)
+      // Esto representa el total que se le liquidó al técnico
+      const finalSettledAmount = totalSettled + totalAdjustmentsDeducted + totalLoanPayments;
+      console.log("📊 [WeeklyReport] Cálculo de settledAmount:", {
+        totalSettled,
+        totalAdjustmentsDeducted,
+        totalLoanPayments,
+        finalSettledAmount,
+        settlementsCount: settlementsAmounts?.length || 0,
+        calculation: `${totalSettled} + ${totalAdjustmentsDeducted} + ${totalLoanPayments} = ${finalSettledAmount}`
+      });
+      setSettledAmount(finalSettledAmount);
     } finally {
       setLoading(false);
       setLoadingAdjustments(false);
@@ -446,16 +474,27 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
   const totalAdjustments = totalAppliedAdjustments;
 
   // Calcular el saldo disponible:
-  // 1. Total ganado (totalEarned)
-  // 2. Menos ajustes aplicados (totalAdjustments) - estos ya fueron descontados
-  // 3. Menos descuentos por devoluciones (returnsDiscount)
-  // 4. Menos lo que ya se le pagó (settledAmount) - esto es lo que ya salió de la empresa
-  // El resultado es lo que AÚN está disponible para pagar
-  const netEarned = totalEarned - totalAdjustments - returnsDiscount;
-  // IMPORTANTE: netAfterSettlements es el saldo DISPONIBLE después de descontar ajustes y pagos
+  // IMPORTANTE: NO restar totalAdjustments aquí porque ya están incluidos en settledAmount
+  // settledAmount incluye:
+  // - Pagos directos (amount)
+  // - Ajustes descontados (selected_adjustments_total) <- estos ya incluyen totalAdjustments
+  // - Abonos de préstamos (loan_payments_total)
+  // Por lo tanto, solo debemos restar returnsDiscount y settledAmount
+  const netEarned = totalEarned - returnsDiscount;
+  // IMPORTANTE: netAfterSettlements es el saldo DISPONIBLE después de descontar pagos
   // Si es negativo, significa que se le pagó más de lo que tenía disponible
   // Si es positivo, es lo que aún se le debe
   const netAfterSettlements = netEarned - settledAmount;
+  
+  // Log para debugging
+  console.log("📊 [WeeklyReport] Cálculo de saldo:", {
+    totalEarned,
+    totalAdjustments,
+    returnsDiscount,
+    netEarned,
+    settledAmount,
+    netAfterSettlements
+  });
   const availableForAdvance = Math.max(netAfterSettlements, 0);
   const baseAmountForSettlement = Math.max(totalEarned - returnsDiscount, 0);
 

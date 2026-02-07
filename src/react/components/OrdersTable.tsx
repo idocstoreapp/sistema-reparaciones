@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { supabase } from "@/lib/supabase";
 import { formatDate, currentWeekRange, dateStringToUTCStart, dateStringToUTCEnd, dateToUTCStart, dateToUTCEnd } from "@/lib/date";
 import { processReceiptInput, isUrl } from "@/lib/receipt";
-import { formatCLP } from "@/lib/currency";
+import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
 import { calculatePayoutWeek, calculatePayoutYear } from "@/lib/payoutWeek";
 import type { Order, OrderNote, Profile } from "@/types";
 // Bsale integration removed - now using manual receipt URL
@@ -1302,12 +1302,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="numeric"
                           className="w-20 border border-slate-300 rounded px-1 py-0.5 text-xs"
-                          value={editReplacementCost}
-                          onChange={(e) => setEditReplacementCost(parseFloat(e.target.value) || 0)}
+                          value={formatCLPInput(editReplacementCost)}
+                          onChange={(e) => setEditReplacementCost(parseCLPInput(e.target.value))}
                           placeholder="0"
                           autoFocus
                         />
@@ -1321,12 +1320,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                     <td className="py-2 px-2 whitespace-nowrap text-right text-xs">
                       {editingCostsId === o.id ? (
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="numeric"
                           className="w-20 border border-slate-300 rounded px-1 py-0.5 text-xs"
-                          value={editRepairCost}
-                          onChange={(e) => setEditRepairCost(parseFloat(e.target.value) || 0)}
+                          value={formatCLPInput(editRepairCost)}
+                          onChange={(e) => setEditRepairCost(parseCLPInput(e.target.value))}
                           placeholder="0"
                         />
                       ) : (
@@ -1441,12 +1439,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           <div>
                             <label className="text-[10px] text-slate-600 block mb-0.5">Costo Repuesto</label>
                             <input
-                              type="number"
-                              step="0.01"
-                              min="0"
+                              type="text"
+                              inputMode="numeric"
                               className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
-                              value={editReplacementCost}
-                              onChange={(e) => setEditReplacementCost(parseFloat(e.target.value) || 0)}
+                              value={formatCLPInput(editReplacementCost)}
+                              onChange={(e) => setEditReplacementCost(parseCLPInput(e.target.value))}
                               placeholder="0"
                               autoFocus
                             />
@@ -1454,12 +1451,11 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
                           <div>
                             <label className="text-[10px] text-slate-600 block mb-0.5">Costo Reparación</label>
                             <input
-                              type="number"
-                              step="0.01"
-                              min="0"
+                              type="text"
+                              inputMode="numeric"
                               className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
-                              value={editRepairCost}
-                              onChange={(e) => setEditRepairCost(parseFloat(e.target.value) || 0)}
+                              value={formatCLPInput(editRepairCost)}
+                              onChange={(e) => setEditRepairCost(parseCLPInput(e.target.value))}
                               placeholder="0"
                             />
                           </div>
