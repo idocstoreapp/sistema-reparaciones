@@ -1266,7 +1266,7 @@ export default function MetricsPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="flex flex-col justify-center space-y-3">
-                  {donutChartData
+                  {[...donutChartData]
                     .sort((a, b) => b.value - a.value)
                     .map((item, index) => {
                       const originalIndex = donutChartData.findIndex(d => d.name === item.name);
