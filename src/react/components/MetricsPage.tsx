@@ -78,13 +78,32 @@ export default function MetricsPage() {
   const [branchMetrics, setBranchMetrics] = useState<BranchMetrics[]>([]);
   const [technicianMetrics, setTechnicianMetrics] = useState<TechnicianMetrics | null>(null);
   const [previousPeriodMetrics, setPreviousPeriodMetrics] = useState<BranchMetrics[] | TechnicianMetrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Calcular semanas en el rango
   const weeks = useMemo(() => {
     if (!startDate || !endDate) return [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return getWeeksInRange(start, end);
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      // Validar que las fechas sean válidas
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        console.error("[MetricsPage] Fechas inválidas:", { startDate, endDate });
+        return [];
+      }
+      
+      // Validar que la fecha de inicio sea anterior a la de fin
+      if (start > end) {
+        console.error("[MetricsPage] Fecha de inicio posterior a fecha de fin:", { start, end });
+        return [];
+      }
+      
+      return getWeeksInRange(start, end);
+    } catch (error) {
+      console.error("[MetricsPage] Error calculando semanas:", error);
+      return [];
+    }
   }, [startDate, endDate]);
 
   // Calcular período anterior para comparación
@@ -156,8 +175,26 @@ export default function MetricsPage() {
     async function loadBranchMetrics() {
       setLoading(true);
       try {
-        const start = dateToUTCStart(new Date(startDate));
-        const end = dateToUTCEnd(new Date(endDate));
+        // Validar fechas antes de usarlas
+        const startDateObj = new Date(startDate);
+        const endDateObj = new Date(endDate);
+        
+        if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+          console.error("[MetricsPage] Fechas inválidas al cargar métricas:", { startDate, endDate });
+          setBranchMetrics([]);
+          setLoading(false);
+          return;
+        }
+        
+        if (startDateObj > endDateObj) {
+          console.error("[MetricsPage] Fecha de inicio posterior a fecha de fin");
+          setBranchMetrics([]);
+          setLoading(false);
+          return;
+        }
+        
+        const start = dateToUTCStart(startDateObj);
+        const end = dateToUTCEnd(endDateObj);
 
         const metrics: BranchMetrics[] = [];
 
@@ -457,14 +494,23 @@ export default function MetricsPage() {
         }
 
         setBranchMetrics(metrics);
+        setError(null); // Limpiar error si la carga fue exitosa
       } catch (error) {
         console.error("Error cargando métricas de sucursales:", error);
+        // En caso de error, limpiar métricas para evitar estado inconsistente
+        setBranchMetrics([]);
+        setError(error instanceof Error ? error.message : "Error al cargar métricas. Por favor, recarga la página.");
       } finally {
         setLoading(false);
       }
     }
 
-    loadBranchMetrics();
+    // Usar un timeout para evitar múltiples llamadas rápidas
+    const timeoutId = setTimeout(() => {
+      loadBranchMetrics();
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [viewMode, selectedBranches, weeks, startDate, endDate, branches]);
 
   // Cargar métricas de técnico
@@ -480,8 +526,26 @@ export default function MetricsPage() {
     async function loadTechnicianMetrics() {
       setLoading(true);
       try {
-        const start = dateToUTCStart(new Date(startDate));
-        const end = dateToUTCEnd(new Date(endDate));
+        // Validar fechas antes de usarlas
+        const startDateObj = new Date(startDate);
+        const endDateObj = new Date(endDate);
+        
+        if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+          console.error("[MetricsPage] Fechas inválidas al cargar métricas de técnico:", { startDate, endDate });
+          setTechnicianMetrics(null);
+          setLoading(false);
+          return;
+        }
+        
+        if (startDateObj > endDateObj) {
+          console.error("[MetricsPage] Fecha de inicio posterior a fecha de fin");
+          setTechnicianMetrics(null);
+          setLoading(false);
+          return;
+        }
+        
+        const start = dateToUTCStart(startDateObj);
+        const end = dateToUTCEnd(endDateObj);
 
         // Obtener TODAS las órdenes del técnico en el rango completo (sin límite)
         // Usar paid_at o created_at como fallback
@@ -868,14 +932,23 @@ export default function MetricsPage() {
             mixto: paymentMethods.mixto
           }
         });
+        setError(null); // Limpiar error si la carga fue exitosa
       } catch (error) {
         console.error("Error cargando métricas de técnico:", error);
+        // En caso de error, limpiar métricas para evitar estado inconsistente
+        setTechnicianMetrics(null);
+        setError(error instanceof Error ? error.message : "Error al cargar métricas. Por favor, recarga la página.");
       } finally {
         setLoading(false);
       }
     }
 
-    loadTechnicianMetrics();
+    // Usar un timeout para evitar múltiples llamadas rápidas
+    const timeoutId = setTimeout(() => {
+      loadTechnicianMetrics();
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [viewMode, selectedTechnician, weeks, startDate, endDate, technicians]);
 
   // Preparar datos para gráfico de dona (distribución de ventas)
@@ -939,6 +1012,27 @@ export default function MetricsPage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-red-800 font-medium">{error}</p>
+            </div>
+            <button
+              onClick={() => {
+                setError(null);
+                window.location.reload();
+              }}
+              className="text-red-600 hover:text-red-800 underline text-sm"
+            >
+              Recargar página
+            </button>
+          </div>
+        </div>
+      )}
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Filtros de Métricas</h2>
@@ -964,7 +1058,18 @@ export default function MetricsPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                const newStartDate = e.target.value;
+                // Validar que la fecha sea válida antes de actualizar
+                if (newStartDate) {
+                  const dateObj = new Date(newStartDate);
+                  if (!isNaN(dateObj.getTime())) {
+                    setStartDate(newStartDate);
+                  }
+                } else {
+                  setStartDate(newStartDate);
+                }
+              }}
               className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
             />
           </div>
@@ -974,7 +1079,18 @@ export default function MetricsPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                const newEndDate = e.target.value;
+                // Validar que la fecha sea válida antes de actualizar
+                if (newEndDate) {
+                  const dateObj = new Date(newEndDate);
+                  if (!isNaN(dateObj.getTime())) {
+                    setEndDate(newEndDate);
+                  }
+                } else {
+                  setEndDate(newEndDate);
+                }
+              }}
               className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
             />
           </div>

@@ -23,6 +23,18 @@ export function getWeeksInRange(startDate: Date, endDate: Date): Array<{
     label: string;
   }> = [];
 
+  // Validar que las fechas sean válidas
+  if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    console.error("[getWeeksInRange] Fechas inválidas:", { startDate, endDate });
+    return [];
+  }
+
+  // Validar que la fecha de inicio sea anterior a la de fin
+  if (startDate > endDate) {
+    console.error("[getWeeksInRange] Fecha de inicio posterior a fecha de fin:", { startDate, endDate });
+    return [];
+  }
+
   // Encontrar el primer sábado dentro o antes del rango
   let currentDate = new Date(startDate);
   const dayOfWeek = currentDate.getDay(); // 0 = domingo, 6 = sábado
