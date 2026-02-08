@@ -30,6 +30,7 @@ interface BranchMetrics {
   totalWarranties: number;
   totalPaid: number; // Total pagado a técnicos
   totalCreated: number; // Total órdenes creadas
+  totalProfit: number; // Ganancias finales (después de descontar repuestos y comisiones)
   paymentMethods: {
     efectivo: number;
     transferencia: number;
@@ -221,6 +222,7 @@ export default function MetricsPage() {
               totalWarranties: 0,
               totalPaid: 0,
               totalCreated: 0,
+              totalProfit: 0,
               paymentMethods: { efectivo: 0, transferencia: 0, tarjeta: 0, mixto: 0 }
             });
             continue;
@@ -236,7 +238,7 @@ export default function MetricsPage() {
           while (hasMore) {
             const { data: ordersPage, error } = await supabase
               .from("orders")
-              .select("id, repair_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
+              .select("id, repair_cost, replacement_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
               .in("technician_id", technicianIds)
               .eq("status", "paid")
               .not("paid_at", "is", null)
@@ -265,7 +267,7 @@ export default function MetricsPage() {
           while (hasMore) {
             const { data: ordersPage, error } = await supabase
               .from("orders")
-              .select("id, repair_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
+              .select("id, repair_cost, replacement_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
               .in("technician_id", technicianIds)
               .eq("status", "paid")
               .is("paid_at", null)
@@ -297,7 +299,7 @@ export default function MetricsPage() {
           while (hasMore) {
             const { data: ordersPage, error } = await supabase
               .from("orders")
-              .select("id, repair_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
+              .select("id, repair_cost, replacement_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
               .in("technician_id", technicianIds)
               .gte("created_at", start.toISOString())
               .lte("created_at", end.toISOString())
@@ -325,7 +327,7 @@ export default function MetricsPage() {
           while (hasMore) {
             const { data: ordersPage, error } = await supabase
               .from("orders")
-              .select("id, repair_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
+              .select("id, repair_cost, replacement_cost, commission_amount, status, paid_at, created_at, payment_method, sucursal_id")
               .in("technician_id", technicianIds)
               .in("status", ["returned", "cancelled"])
               .gte("created_at", start.toISOString())
@@ -358,6 +360,23 @@ export default function MetricsPage() {
           const totalOrders = paidOrders.length;
           const totalCreated = createdOrders.length;
           const totalWarranties = warrantyOrders.length;
+          
+          // Calcular total de repuestos descontados
+          const totalReplacementCost = paidOrders.reduce((sum, o) => sum + (o.replacement_cost ?? 0), 0);
+          
+          // Calcular comisiones del técnico (después de descontar repuestos)
+          // Esto es la suma de commission_amount de todas las órdenes pagadas
+          const totalCommissions = paidOrders.reduce((sum, o) => sum + (o.commission_amount ?? 0), 0);
+          
+          // Calcular ganancias finales: repair_cost - replacement_cost - commission_amount
+          const totalProfit = paidOrders.reduce((sum, o) => {
+            const repairCost = o.repair_cost ?? 0;
+            const replacementCost = o.replacement_cost ?? 0;
+            const commission = o.commission_amount ?? 0;
+            // Ganancias = Total cobrado - Costo repuesto - Comisión técnico
+            const profit = repairCost - replacementCost - commission;
+            return sum + Math.max(0, profit); // Asegurar que no sea negativo
+          }, 0);
 
           console.log(`[MetricsPage] ${branch.name}:`, {
             totalSales,
@@ -400,7 +419,8 @@ export default function MetricsPage() {
 
           const settlements = allSettlements;
 
-          const totalPaid = (settlements || []).reduce((sum, s) => sum + (s.amount || 0), 0);
+          // Usar totalCommissions calculado desde órdenes en lugar de settlements
+          // totalCommissions ya fue calculado arriba como suma de commission_amount
 
           // Calcular medios de pago desde las órdenes pagadas (no desde settlements)
           // Sumar el repair_cost de cada orden según su payment_method
@@ -487,8 +507,9 @@ export default function MetricsPage() {
             totalSales,
             totalOrders,
             totalWarranties,
-            totalPaid,
+            totalPaid: totalCommissions, // Usar comisiones calculadas desde órdenes
             totalCreated,
+            totalProfit,
             paymentMethods
           });
         }
@@ -1223,6 +1244,41 @@ export default function MetricsPage() {
       {/* Vista de Sucursales */}
       {viewMode === "branches" && branchMetrics.length > 0 && (
         <>
+          {/* Resumen General de Ganancias */}
+          {branchMetrics.length > 0 && (
+            <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-lg shadow-md p-6 border-2 border-emerald-300">
+              <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                💎 Resumen de Ganancias
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-lg p-4 border border-emerald-200">
+                  <p className="text-sm text-slate-600 mb-1">Total Vendido</p>
+                  <p className="text-2xl font-bold text-emerald-700">
+                    {formatCLP(branchMetrics.reduce((sum, b) => sum + b.totalSales, 0))}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-emerald-200">
+                  <p className="text-sm text-slate-600 mb-1">Comisiones a Técnicos</p>
+                  <p className="text-2xl font-bold text-sky-600">
+                    {formatCLP(branchMetrics.reduce((sum, b) => sum + b.totalPaid, 0))}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 italic">
+                    (Después de descontar repuestos)
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-4 border-2 border-emerald-400">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">💎 Ganancias Finales</p>
+                  <p className="text-3xl font-bold text-emerald-700">
+                    {formatCLP(branchMetrics.reduce((sum, b) => sum + b.totalProfit, 0))}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 italic">
+                    (Después de descontar repuestos y comisiones)
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Gráfico de Dona - Distribución de Ventas */}
           {donutChartData.length > 0 && donutChartData.some(d => d.value > 0) && (
             <div className="bg-white rounded-lg shadow-md p-6">
@@ -1412,12 +1468,22 @@ export default function MetricsPage() {
                       <span className="font-bold text-purple-600 text-base">{branch.totalCreated}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-600">💵 Total Pagado:</span>
+                      <span className="text-slate-600">💵 Comisiones Técnicos:</span>
                       <span className="font-bold text-sky-600 text-base">{formatCLP(branch.totalPaid)}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 italic pl-2">
+                      (Después de descontar repuestos)
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-600">🔄 Garantías:</span>
                       <span className="font-bold text-amber-600 text-base">{branch.totalWarranties}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 mt-2 border-t-2 border-emerald-300">
+                      <span className="text-slate-700 font-semibold">💎 Ganancias Finales:</span>
+                      <span className="font-bold text-emerald-700 text-lg">{formatCLP(branch.totalProfit)}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 italic pt-1">
+                      (Después de descontar repuestos y comisiones)
                     </div>
                     {branch.totalOrders > 0 && (
                       <div className="pt-2 mt-2 border-t border-slate-200">
