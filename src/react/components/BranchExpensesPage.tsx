@@ -188,9 +188,7 @@ export default function BranchExpensesPage({ userRole, refreshKey = 0 }: BranchE
         0
       );
 
-      // Pagos a técnicos - CALCULADO DESDE ÓRDENES PAGADAS (igual que el historial)
-      // El historial muestra pagos "Auto-generadas" calculados desde órdenes pagadas
-      // NO desde salary_settlements (esos son solo los registrados manualmente)
+      // Pagos a técnicos: resumen calculado desde comisiones de órdenes pagadas en el rango
       
       // Obtener todos los técnicos de todas las sucursales
       const { data: allTechnicians } = await supabase

@@ -459,155 +459,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
       } else {
         const list = (data as SalarySettlement[]) ?? [];
         
-        // Obtener todas las semanas únicas con órdenes pagadas para generar liquidaciones automáticas
-        const technicianIdsToCheck = filters.technicianId !== "all" 
-          ? [filters.technicianId] 
-          : technicians.map(t => t.id);
-        
-        const autoSettlements: SalarySettlement[] = [];
-        
-        for (const techId of technicianIdsToCheck) {
-          // Obtener todas las órdenes pagadas del técnico (sin límite de fecha a menos que se filtre)
-          // Usar exactamente los mismos filtros que AdminReports para garantizar consistencia
-          let ordersQuery = supabase
-            .from("orders")
-            .select("id, created_at, commission_amount, week_start, status, receipt_number")
-            .eq("technician_id", techId)
-            .eq("status", "paid")
-            .not("receipt_number", "is", null);
-          
-          // Usar fechas UTC correctas para el filtro (igual que AdminReports)
-          // Solo aplicar filtros de fecha si se proporcionaron
-          if (filters.startDate && filters.startDate.trim() !== "") {
-            const [startYear, startMonth, startDay] = filters.startDate.split('-').map(Number);
-            const startUTC = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0, 0));
-            ordersQuery = ordersQuery.gte("created_at", startUTC.toISOString());
-          }
-          if (filters.endDate && filters.endDate.trim() !== "") {
-            const [endYear, endMonth, endDay] = filters.endDate.split('-').map(Number);
-            const endUTC = new Date(Date.UTC(endYear, endMonth - 1, endDay, 23, 59, 59, 999));
-            ordersQuery = ordersQuery.lte("created_at", endUTC.toISOString());
-          }
-          
-          const { data: paidOrders, error: ordersError } = await ordersQuery;
-          
-          if (ordersError) {
-            console.error(`❌ Error obteniendo órdenes para técnico ${techId}:`, ordersError);
-            continue;
-          }
-          
-          if (paidOrders && paidOrders.length > 0) {
-            // Verificar si hay filtros de fecha
-            const hasDateFilters = filters.startDate && filters.endDate && filters.startDate.trim() !== "" && filters.endDate.trim() !== "";
-            
-            console.log(`🔍 Técnico ${techId}: Se encontraron ${paidOrders.length} órdenes pagadas${hasDateFilters ? ` en el rango ${filters.startDate} al ${filters.endDate}` : ' (todas)'}`);
-            
-            // CORREGIDO: Cuando hay filtros de fecha, mostrar TODOS los pagos individuales registrados
-            // NO crear resúmenes totales, mostrar cada pago semana por semana con su fecha
-            // Solo agregar liquidaciones automáticas para semanas que NO tienen liquidación registrada
-            
-            // Agrupar por semana (week_start) para mostrar pagos individuales
-            const weeksMap = new Map<string, { orders: any[], total: number }>();
-            
-            paidOrders.forEach(order => {
-              // Calcular semana laboral: sábado a viernes
-              // Si la orden tiene week_start en la BD, usarlo
-              // Si no, calcularlo basado en la fecha de la orden
-              let weekStart = order.week_start;
-              if (!weekStart && order.created_at) {
-                const orderDate = new Date(order.created_at);
-                // Calcular el sábado que inicia esa semana laboral
-                // La semana laboral es sábado (día 6) a viernes siguiente
-                const dayOfWeek = orderDate.getDay(); // 0=domingo, 1=lunes, ..., 5=viernes, 6=sábado
-                const saturdayDate = new Date(orderDate);
-                saturdayDate.setHours(0, 0, 0, 0);
-                
-                if (dayOfWeek === 6) { // Sábado
-                  // Ya es sábado, usar ese sábado como inicio de semana
-                  weekStart = saturdayDate.toISOString().slice(0, 10);
-                } else {
-                  // Domingo a viernes, retroceder hasta el sábado anterior
-                  // Sábado es día 6, así que si estamos en día X, retrocedemos (X+1) días para llegar al sábado
-                  const daysToSubtract = dayOfWeek + 1;
-                  saturdayDate.setDate(orderDate.getDate() - daysToSubtract);
-                  weekStart = saturdayDate.toISOString().slice(0, 10);
-                }
-              }
-              
-              if (weekStart) {
-                if (!weeksMap.has(weekStart)) {
-                  weeksMap.set(weekStart, { orders: [], total: 0 });
-                }
-                const weekData = weeksMap.get(weekStart)!;
-                weekData.orders.push(order);
-                weekData.total += order.commission_amount || 0;
-              }
-            });
-            
-            // Para cada semana con órdenes pagadas, verificar si ya existe una liquidación registrada
-            for (const [weekStart, weekData] of weeksMap.entries()) {
-              const existingSettlement = list.find(
-                s => s.technician_id === techId && s.week_start === weekStart
-              );
-              
-              // Si NO existe liquidación registrada pero hay órdenes pagadas, crear una automática
-              // Solo si no hay filtros de fecha o si la semana está dentro del rango
-              if (!existingSettlement && weekData.total > 0) {
-                // Si hay filtros de fecha, verificar que la semana esté dentro del rango
-                if (hasDateFilters) {
-                  const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-                  const filterStartDate = new Date(`${filters.startDate}T00:00:00.000Z`);
-                  const filterEndDate = new Date(`${filters.endDate}T23:59:59.999Z`);
-                  
-                  // Solo incluir si la semana está dentro o se solapa con el rango
-                  if (weekStartDate < filterStartDate || weekStartDate > filterEndDate) {
-                    continue; // Saltar esta semana si está fuera del rango
-                  }
-                }
-                
-                autoSettlements.push({
-                  id: `auto-${techId}-${weekStart}`, // ID temporal
-                  technician_id: techId,
-                  week_start: weekStart,
-                  amount: weekData.total,
-                  note: `Calculado automáticamente de ${weekData.orders.length} órdenes pagadas`,
-                  context: "admin" as const,
-                  payment_method: null,
-                  details: {
-                    auto_generated: true,
-                    orders_count: weekData.orders.length,
-                    orders_ids: weekData.orders.map(o => o.id),
-                  },
-                  created_by: null,
-                  created_at: weekData.orders[weekData.orders.length - 1]?.created_at || new Date().toISOString(),
-                });
-              }
-            }
-          }
-        }
-        
-        // CORREGIDO: Cuando hay filtros de fecha, mostrar TODOS los pagos individuales registrados
-        // NO crear resúmenes totales, mostrar cada pago con su fecha
+        // Solo mostrar liquidaciones registradas (sin autogenerar pagos desde órdenes)
         const hasDateFilters = filters.startDate && filters.endDate && filters.startDate.trim() !== "" && filters.endDate.trim() !== "";
-        
-        // Cuando hay filtros de fecha, mostrar SOLO los pagos registrados individuales
-        // NO mostrar liquidaciones automáticas de rango completo
-        let finalAutoSettlements = hasDateFilters 
-          ? autoSettlements.filter(s => !(s.details as any)?.auto_range) // Solo automáticas por semana, NO resúmenes
-          : autoSettlements; // Sin filtros: mostrar todas
-        
-        console.log(`📋 Liquidaciones automáticas finales a mostrar: ${finalAutoSettlements.length}`);
-        if (finalAutoSettlements.length > 0) {
-          finalAutoSettlements.forEach((s, idx) => {
-            console.log(`   ${idx + 1}. ${technicianNameMap[s.technician_id] || s.technician_id}: ${s.amount} CLP`);
-            if ((s.details as any)?.auto_range) {
-              console.log(`      Rango: ${(s.details as any).range_start} al ${(s.details as any).range_end}`);
-            }
-          });
-        }
-        
-        // Combinar liquidaciones registradas con las automáticas
-        // Si hay filtros de fecha, también filtrar las registradas por el rango
         let filteredList = list;
         if (hasDateFilters) {
           const filterStartDate = new Date(`${filters.startDate}T00:00:00.000Z`);
@@ -622,33 +475,13 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           console.log(`📝 Liquidaciones registradas filtradas: ${filteredList.length} de ${list.length}`);
         }
         
-        const combinedList = [...filteredList, ...finalAutoSettlements].sort((a, b) => {
+        const combinedList = [...filteredList].sort((a, b) => {
           const dateA = new Date(a.created_at).getTime();
           const dateB = new Date(b.created_at).getTime();
           return dateB - dateA; // Más recientes primero
         });
         
-        console.log(`✅ Total liquidaciones combinadas a mostrar: ${combinedList.length}`);
-        
-        console.log("=== FILTROS APLICADOS ===");
-        console.log("Técnico:", filters.technicianId);
-        console.log("Desde:", filters.startDate);
-        console.log("Hasta:", filters.endDate);
-        console.log("=== RESULTADOS ===");
-        console.log("Liquidaciones registradas (total):", list.length);
-        console.log("Liquidaciones registradas (filtradas):", filteredList.length);
-        console.log("Liquidaciones automáticas (finales):", finalAutoSettlements.length);
-        console.log("Total liquidaciones a mostrar:", combinedList.length);
-        console.log("=== DETALLE LIQUIDACIONES ===");
-        combinedList.forEach((entry, idx) => {
-          console.log(`${idx + 1}. Técnico: ${technicianNameMap[entry.technician_id] || entry.technician_id}`);
-          console.log(`   Monto: ${entry.amount}`);
-          console.log(`   Nota: ${entry.note || "Sin nota"}`);
-          console.log(`   Tipo: ${(entry.details as any)?.auto_generated ? "Auto-generada" : "Registrada"}`);
-          if ((entry.details as any)?.auto_range) {
-            console.log(`   Rango: ${(entry.details as any).range_start} a ${(entry.details as any).range_end}`);
-          }
-        });
+        console.log(`✅ Total liquidaciones a mostrar: ${combinedList.length}`);
         
         // Verificar si hay liquidaciones sin nombre de técnico
         const liquidacionesSinNombre = combinedList.filter(entry => !technicianNameMap[entry.technician_id]);

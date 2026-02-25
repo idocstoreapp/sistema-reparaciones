@@ -482,7 +482,7 @@ export default function MetricsPage() {
             // Órdenes en garantía de esta semana
             const weekWarrantyOrders = warrantyOrders.filter(o => {
               const warrantyDate = o.returned_at ? new Date(o.returned_at) : 
-                                 o.cancelled_at ? new Date(o.cancelled_at) : 
+                                 (o.cancelled_at ?? o.canceled_at) ? new Date((o.cancelled_at ?? o.canceled_at)!) : 
                                  new Date(o.created_at);
               return warrantyDate >= weekStartUTC && warrantyDate <= weekEndUTC;
             });
@@ -911,7 +911,7 @@ export default function MetricsPage() {
 
           const weekWarrantyOrders = warrantyOrders.filter(o => {
             const warrantyDate = o.returned_at ? new Date(o.returned_at) : 
-                               o.cancelled_at ? new Date(o.cancelled_at) : 
+                               (o.cancelled_at ?? o.canceled_at) ? new Date((o.cancelled_at ?? o.canceled_at)!) : 
                                new Date(o.created_at);
             return warrantyDate >= weekStartUTC && warrantyDate <= weekEndUTC;
           });

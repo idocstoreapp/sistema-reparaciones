@@ -991,7 +991,7 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
                 // Usar returned_at o cancelled_at si existe, sino usar created_at como fallback
                 const statusDate = order.status === "returned" 
                   ? (order.returned_at || order.created_at)
-                  : (order.cancelled_at || order.created_at);
+                  : (order.cancelled_at ?? order.canceled_at ?? order.created_at);
                 const dateTime = new Date(statusDate).toLocaleString("es-CL", {
                   dateStyle: "short",
                   timeStyle: "short",

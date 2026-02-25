@@ -792,22 +792,18 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
       // Obtener la fecha/hora exacta de cuando se marca como devuelta/cancelada
       const now = new Date().toISOString();
       
-      // Preparar los datos de actualización
-      const updateData: {
-        status: string;
-        returned_at?: string | null;
-        cancelled_at?: string | null;
-      } = {
+      // Preparar los datos de actualización (columnas en DB: returned_at, canceled_at - schema cache)
+      const updateData: Record<string, unknown> = {
         status: newStatus,
       };
 
       // Si se marca como devuelta, guardar la fecha/hora exacta
       if (newStatus === "returned") {
         updateData.returned_at = now;
-        updateData.cancelled_at = null; // Limpiar cancelled_at si existía
+        updateData.canceled_at = null; // Limpiar canceled_at si existía
       } else if (newStatus === "cancelled") {
-        updateData.cancelled_at = now;
-        updateData.returned_at = null; // Limpiar returned_at si existía
+        updateData.canceled_at = now;  // Nombre de columna en DB (canceled_at)
+        updateData.returned_at = null;  // Limpiar returned_at si existía
       }
 
       const { error } = await supabase

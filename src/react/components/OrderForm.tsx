@@ -206,7 +206,7 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
         alert(`✅ Orden creada exitosamente. ⚠️ Advertencia: Este número de recibo está duplicado en otra(s) orden(es).`);
       }
       
-      if (createdOrder && initialNote.trim()) {
+      if (createdOrder?.id && initialNote.trim()) {
         const { error: noteError } = await supabase.from("order_notes").insert({
           order_id: createdOrder.id,
           technician_id: technicianId,
