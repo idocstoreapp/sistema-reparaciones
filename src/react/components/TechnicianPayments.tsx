@@ -891,12 +891,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                         <div>
                           <p className="font-semibold text-slate-800">
                             {technicianNameMap[entry.technician_id] || `Técnico (${entry.technician_id.slice(0, 8)}...)`}
-                            {(entry.details as any)?.auto_generated && (
-                              <span className="ml-2 text-xs text-blue-600 font-normal">(Auto-generada)</span>
-                            )}
                           </p>
                           <div className="text-xs text-slate-500 space-y-1">
-                            {/* Fecha del pago - SIEMPRE mostrar primero */}
                             {entry.created_at && (
                               <p className="font-medium text-slate-700">
                                 📅 Fecha del pago: {formatDate(entry.created_at)} • {new Date(entry.created_at).toLocaleTimeString("es-CL", {
@@ -905,9 +901,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                 })}
                               </p>
                             )}
-                            
-                            {/* Información de la semana y medio de pago */}
-                            {!(entry.details as any)?.auto_range && entry.week_start && (
+                            {entry.week_start && (
                               <p>
                                 📆 Período: {(() => {
                                   try {
@@ -919,21 +913,9 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                 })()} • 💳 Medio: {paymentMethodLabel}
                               </p>
                             )}
-                            
-                            {/* Si es resumen de rango (no debería aparecer con la corrección, pero por si acaso) */}
-                            {(entry.details as any)?.auto_range && (
-                              <p className="text-amber-600">
-                                ⚠️ Resumen del rango: {formatDate((entry.details as any).range_start)} al {formatDate((entry.details as any).range_end)}
-                              </p>
+                            {entry.note && (
+                              <p className="text-slate-600">ℹ️ {entry.note}</p>
                             )}
-                            
-                            {/* Nota si es auto-generada */}
-                            {(entry.details as any)?.auto_generated && entry.note && (
-                              <p className="text-blue-600">
-                                ℹ️ {entry.note}
-                              </p>
-                            )}
-                            
                             {/* Desglose de pago mixto */}
                             {isMixedPayment && (
                               <p>
@@ -1159,9 +1141,6 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                   <div>
                                     <p className="font-semibold text-slate-800 text-lg">
                                       {formatCLP(entry.amount)}
-                                      {(entry.details as any)?.auto_generated && (
-                                        <span className="ml-2 text-xs text-blue-600 font-normal">(Auto-generada)</span>
-                                      )}
                                     </p>
                                     <div className="text-xs text-slate-500 space-y-1 mt-2">
                                       {entry.created_at && (
@@ -1184,16 +1163,9 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                           })()} • 💳 {paymentMethodLabel}
                                         </p>
                                       )}
-                                      {!(entry.details as any)?.auto_generated && (
-                                        <p className="text-emerald-600 font-semibold">
-                                          💵 Monto pagado: {formatCLP(entry.amount)}
-                                        </p>
-                                      )}
-                                      {!(entry.details as any)?.auto_generated && (
-                                        <p className="text-emerald-600 font-medium">
-                                          💵 Monto pagado: {formatCLP(entry.amount)}
-                                        </p>
-                                      )}
+                                      <p className="text-emerald-600 font-semibold">
+                                        💵 Monto pagado: {formatCLP(entry.amount)}
+                                      </p>
                                       {isMixedPayment && (
                                         <p className="text-purple-600">
                                           💵 Efectivo: {formatCLP(paymentBreakdown.efectivo)} • 

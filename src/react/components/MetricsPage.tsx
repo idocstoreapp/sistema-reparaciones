@@ -806,15 +806,14 @@ export default function MetricsPage() {
                    (pm && pm !== "efectivo" && pm !== "EFECTIVO" && pm !== "transferencia" && pm !== "TRANSFERENCIA");
           });
           
-          // Settlements sin payment_method (asumir efectivo por defecto si hay amount)
+          // Settlements sin payment_method (se contabilizan aparte en logs, pero NO se asumen como efectivo)
           const sinPaymentMethod = settlements.filter(s => {
             const pm = s.payment_method;
             return (!pm || pm === null || pm === undefined) && s.amount && s.amount > 0;
           });
 
           paymentMethods = {
-            efectivo: efectivoSettlements.reduce((sum, s) => sum + (s.amount || 0), 0) + 
-                     sinPaymentMethod.reduce((sum, s) => sum + (s.amount || 0), 0), // Asumir efectivo si no hay payment_method
+            efectivo: efectivoSettlements.reduce((sum, s) => sum + (s.amount || 0), 0),
             transferencia: transferenciaSettlements.reduce((sum, s) => sum + (s.amount || 0), 0),
             mixto: mixtoSettlements.reduce((sum, s) => sum + (s.amount || 0), 0)
           };
