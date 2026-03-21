@@ -207,8 +207,14 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
       }
       
       if (createdOrder?.id && initialNote.trim()) {
+        const { data: existingOrder } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("id", createdOrder.id)
+          .maybeSingle();
+
         const { error: noteError } = await supabase.from("order_notes").insert({
-          order_id: createdOrder.id,
+          order_id: existingOrder?.id ?? createdOrder.id,
           technician_id: technicianId,
           note: initialNote.trim(),
         });
@@ -529,4 +535,3 @@ export default function OrderForm({ technicianId, onSaved }: OrderFormProps) {
     </form>
   );
 }
-

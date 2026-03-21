@@ -681,6 +681,28 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     }
 
     setSavingNotes((prev) => ({ ...prev, [orderId]: true }));
+
+    // Validar que la orden siga existiendo antes de insertar la nota.
+    // En algunos entornos hay datos antiguos en UI/cache y el FK falla.
+    const { data: existingOrder, error: orderLookupError } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (orderLookupError) {
+      setSavingNotes((prev) => ({ ...prev, [orderId]: false }));
+      console.error("Error validating order before note insert:", orderLookupError);
+      alert("No pudimos validar la orden antes de guardar la nota. Recarga la página e inténtalo nuevamente.");
+      return;
+    }
+
+    if (!existingOrder?.id) {
+      setSavingNotes((prev) => ({ ...prev, [orderId]: false }));
+      await load(adminActiveFilters ?? undefined);
+      alert("La orden ya no existe o cambió en la base de datos. Recargamos la lista para que puedas continuar.");
+      return;
+    }
     
     // Obtener el ID del usuario autenticado si technicianId no está disponible
     let finalTechnicianId = technicianId;
@@ -703,7 +725,7 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     const { data, error } = await supabase
       .from("order_notes")
       .insert({
-        order_id: orderId,
+        order_id: existingOrder.id,
         technician_id: finalTechnicianId || null,
         note: content,
       })
@@ -1813,4 +1835,3 @@ export default function OrdersTable({ technicianId, refreshKey = 0, onUpdate, is
     </div>
   );
 }
-
