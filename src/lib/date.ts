@@ -28,47 +28,43 @@ export function getWeekStart(date: Date = new Date()): Date {
 }
 
 /**
- * Crea una fecha en UTC desde un string YYYY-MM-DD a las 00:00:00 UTC
- * Esto evita problemas de zona horaria al filtrar fechas
+ * Crea una fecha al inicio del día LOCAL desde un string YYYY-MM-DD
+ * Luego, al serializar con toISOString(), representa el instante UTC correcto
+ * para ese inicio de día local y evita cortes adelantados/atrasados por zona horaria.
  */
 export function dateStringToUTCStart(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
 }
 
 /**
- * Crea una fecha en UTC desde un string YYYY-MM-DD a las 23:59:59.999 UTC
- * Esto evita problemas de zona horaria al filtrar fechas
+ * Crea una fecha al fin del día LOCAL desde un string YYYY-MM-DD
+ * Luego, al serializar con toISOString(), representa el instante UTC correcto
+ * para ese fin de día local.
  */
 export function dateStringToUTCEnd(dateString: string): Date {
   const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  return new Date(year, month - 1, day, 23, 59, 59, 999);
 }
 
 /**
- * Convierte un objeto Date a UTC start (00:00:00) del mismo día
- * Útil para filtrar fechas que vienen de date-fns o Date locales
+ * Convierte un Date al inicio del día LOCAL (00:00:00.000)
+ * Útil para filtrar por rangos diarios/semanales respetando la zona horaria del usuario.
  */
 export function dateToUTCStart(date: Date): Date {
-  return new Date(Date.UTC(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    0, 0, 0, 0
-  ));
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start;
 }
 
 /**
- * Convierte un objeto Date a UTC end (23:59:59.999) del mismo día
- * Útil para filtrar fechas que vienen de date-fns o Date locales
+ * Convierte un Date al fin del día LOCAL (23:59:59.999)
+ * Útil para filtrar por rangos diarios/semanales respetando la zona horaria del usuario.
  */
 export function dateToUTCEnd(date: Date): Date {
-  return new Date(Date.UTC(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    23, 59, 59, 999
-  ));
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
 }
 
 /**

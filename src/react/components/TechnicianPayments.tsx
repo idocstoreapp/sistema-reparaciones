@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { currentWeekRange, formatDate, dateToUTCStart, dateToUTCEnd, getWeekRangeFromStart } from "@/lib/date";
+import { currentWeekRange, formatDate, getWeekRangeFromStart } from "@/lib/date";
 import { formatCLP } from "@/lib/currency";
-import { getCurrentPayoutWeek } from "@/lib/payoutWeek";
 import type { Profile, SalaryAdjustment, Order, SalarySettlement, Role } from "@/types";
 import SalarySettlementPanel from "./SalarySettlementPanel";
 import WeeklyReport from "./WeeklyReport";
@@ -156,10 +155,6 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
 
   const loadWeeklyData = useCallback(async () => {
     if (technicians.length === 0) return;
-      const { start, end } = currentWeekRange();
-    const weekStartISO = start.toISOString().slice(0, 10);
-      // ⚠️ CAMBIO CRÍTICO: Usar payout_week/payout_year para filtrar órdenes pagadas
-      const currentPayout = getCurrentPayoutWeek();
       const totals: Record<string, number> = {};
       const adjustmentTotals: Record<string, number> = {};
       const returnsTotals: Record<string, number> = {};
@@ -167,57 +162,21 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
 
       await Promise.all(
         technicians.map(async (tech) => {
-        // Consultar liquidaciones para determinar qué excluir
-        const { data: settlementsData } = await supabase
-          .from("salary_settlements")
-          .select("created_at, amount")
-          .eq("technician_id", tech.id)
-          .eq("week_start", weekStartISO)
-          .order("created_at", { ascending: false });
-
-        const lastSettlementDate = settlementsData && settlementsData.length > 0
-          ? new Date(settlementsData[0].created_at)
-          : null;
-
-        // Consulta para órdenes - IMPORTANTE: NO excluir las liquidadas
-        // baseAmount debe ser el TOTAL ganado de la semana, independientemente de liquidaciones
-        // ⚠️ CAMBIO CRÍTICO: Usar payout_week/payout_year para órdenes pagadas
-        // IMPORTANTE: También buscar por paid_at para capturar semanas que cruzan el año
-        const { start, end } = currentWeekRange();
-        const startUTC = dateToUTCStart(start);
-        const endUTC = dateToUTCEnd(end);
-        
-        // Consulta 1: Por payout_week/payout_year (método principal)
-        const ordersQuery1 = supabase
+        // IMPORTANTE:
+        // El saldo no debe resetearse por cambio de semana.
+        // Se calcula con TODO lo ganado/ajustado/liquidado históricamente.
+        const ordersQuery = supabase
           .from("orders")
-          .select("id, commission_amount")
+          .select("commission_amount")
           .eq("technician_id", tech.id)
-          .eq("status", "paid")
-          .eq("payout_week", currentPayout.week)
-          .eq("payout_year", currentPayout.year);
-        
-        // Consulta 2: Por paid_at dentro del rango de la semana (fallback)
-        const ordersQuery2 = supabase
+          .eq("status", "paid");
+
+        // Devoluciones/cancelaciones acumuladas (descuentan del saldo)
+        const returnsQuery = supabase
           .from("orders")
-          .select("id, commission_amount")
+          .select("commission_amount")
           .eq("technician_id", tech.id)
-          .eq("status", "paid")
-          .gte("paid_at", startUTC.toISOString())
-          .lte("paid_at", endUTC.toISOString());
-        
-        // Ejecutar ambas consultas y combinar resultados
-        // IMPORTANTE: NO filtrar por lastSettlementDate aquí porque baseAmount debe ser el total ganado
-        const [result1, result2] = await Promise.all([
-          ordersQuery1,
-          ordersQuery2
-        ]);
-        
-        // Combinar y eliminar duplicados
-        const orders1 = result1.data ?? [];
-        const orders2 = result2.data ?? [];
-        const orderIds = new Set(orders1.map(o => o.id));
-        const uniqueOrders2 = orders2.filter(o => o.id && !orderIds.has(o.id));
-        const allOrders = [...orders1, ...uniqueOrders2];
+          .in("status", ["returned", "cancelled"]);
 
         // Consulta para ajustes - CORREGIDO: Cargar TODOS los ajustes y filtrar por remaining > 0
         // IMPORTANTE: Incluir aplicaciones para calcular el saldo restante correctamente
@@ -227,31 +186,19 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           .select("amount, available_from, created_at, id, type, note, applications:salary_adjustment_applications(applied_amount)")
           .eq("technician_id", tech.id);
 
-        // Consulta para devoluciones - excluir las liquidadas
-        let returnsQuery = supabase
-          .from("orders")
-          .select("commission_amount")
-          .eq("technician_id", tech.id)
-          .in("status", ["returned", "cancelled"])
-          .gte("created_at", start.toISOString())
-          .lte("created_at", end.toISOString());
-        
-        if (lastSettlementDate) {
-          returnsQuery = returnsQuery.gte("created_at", lastSettlementDate.toISOString());
-        }
-
         const [
-          { data: adjustmentsData, error: adjustmentsError },
+          { data: paidOrders },
           { data: returnedData },
+          { data: adjustmentsData, error: adjustmentsError },
           { data: settlementAmounts },
         ] = await Promise.all([
-          adjustmentsQuery.order("created_at", { ascending: false }),
+          ordersQuery,
           returnsQuery,
+          adjustmentsQuery.order("created_at", { ascending: false }),
           supabase
             .from("salary_settlements")
-            .select("amount")
-            .eq("technician_id", tech.id)
-            .eq("week_start", weekStartISO),
+            .select("amount, details")
+            .eq("technician_id", tech.id),
         ]);
 
         // Si hay error al cargar aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
@@ -271,11 +218,11 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           }));
         }
 
-        // Usar allOrders que ya fue calculado arriba (combinación de ambas consultas)
-        totals[tech.id] = allOrders.reduce((s, o) => s + (o.commission_amount ?? 0), 0);
+        totals[tech.id] = (paidOrders ?? []).reduce((s, o) => s + (o.commission_amount ?? 0), 0);
         
         // CORREGIDO: Calcular total de ajustes disponibles RESTANDO las aplicaciones ya hechas
         // Filtrar solo por remaining > 0, NO por fecha de creación
+        const now = new Date();
         const adjustmentsForWeek = (adjustmentsWithApplications || [])
           .map((adj: any) => {
             // Calcular aplicaciones totales para este ajuste
@@ -299,15 +246,20 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
             const availableFrom = adj.available_from
               ? new Date(adj.available_from)
               : new Date(adj.created_at);
-            return availableFrom <= end;
+            return availableFrom <= now;
           })
           .reduce((sum: number, adj: any) => sum + adj.remaining, 0);
 
         adjustmentTotals[tech.id] = adjustmentsForWeek;
         returnsTotals[tech.id] =
           returnedData?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
-        settlementTotals[tech.id] =
-          settlementAmounts?.reduce((sum: number, row: { amount: number }) => sum + (row.amount ?? 0), 0) ?? 0;
+        settlementTotals[tech.id] = (settlementAmounts ?? []).reduce((sum, settlement: any) => {
+          const adjustmentsTotal = settlement?.details?.selected_adjustments_total;
+          const loanPaymentsTotal = settlement?.details?.loan_payments_total;
+          const discountedAdjustments = typeof adjustmentsTotal === "number" ? adjustmentsTotal : 0;
+          const loanPayments = typeof loanPaymentsTotal === "number" ? loanPaymentsTotal : 0;
+          return sum + (settlement?.amount ?? 0) + discountedAdjustments + loanPayments;
+        }, 0);
         })
       );
 
@@ -977,19 +929,23 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
               }`}
               onClick={() => {
                 setTechModalOpen(tech.id);
+                setHistoryFilters((prev) => ({
+                  ...prev,
+                  technicianId: tech.id,
+                }));
               }}
             >
               <div className="flex justify-between items-center">
                 <div>
                   <div className="font-medium text-slate-900">{tech.name}</div>
                   <div className="text-sm text-slate-600">
-                    Total semanal (con recibo): {formatCLP(weeklyTotal)}
+                    Total ganado acumulado (con recibo): {formatCLP(weeklyTotal)}
                     {returnsTotal > 0 && (
                       <span className="ml-2 text-xs text-red-600">
                         (Devoluciones: -{formatCLP(returnsTotal)})
                       </span>
                     )}
-                    <span className="ml-2 text-xs text-slate-500">(Neto estimado: {formatCLP(netTotal, { withLabel: true })})</span>
+                    <span className="ml-2 text-xs text-slate-500">(Saldo disponible: {formatCLP(netTotal, { withLabel: true })})</span>
                   </div>
                 </div>
                 <div className="text-2xl">▶</div>
@@ -1045,6 +1001,12 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                     onAfterSettlement={() => {
                       void loadWeeklyData();
                       void loadAdjustmentsForTech(tech.id, true);
+                      if (historyPanelOpen) {
+                        void fetchHistoryWithFilters({
+                          ...historyFilters,
+                          technicianId: tech.id,
+                        });
+                      }
                     }}
                   />
                 </div>
@@ -1204,4 +1166,3 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
     </div>
   );
 }
-
