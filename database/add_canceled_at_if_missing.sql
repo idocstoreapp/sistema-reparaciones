@@ -6,10 +6,19 @@
 ALTER TABLE orders
 ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMP WITH TIME ZONE;
 
--- Si ya tenías cancelled_at (británico), copiar valores a canceled_at
-UPDATE orders
-SET canceled_at = cancelled_at
-WHERE cancelled_at IS NOT NULL AND (canceled_at IS NULL OR canceled_at <> cancelled_at);
+-- Verificar si existe la columna cancelled_at (variante británica) antes de copiar
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'orders' AND column_name = 'cancelled_at'
+    ) THEN
+        -- Si ya tenías cancelled_at (británico), copiar valores a canceled_at
+        UPDATE orders
+        SET canceled_at = cancelled_at
+        WHERE cancelled_at IS NOT NULL AND (canceled_at IS NULL OR canceled_at <> cancelled_at);
+    END IF;
+END $$;
 
 -- Índice para consultas
 CREATE INDEX IF NOT EXISTS idx_orders_canceled_at ON orders(canceled_at);

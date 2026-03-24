@@ -49,55 +49,46 @@ export default function Sidebar({ currentSection, onSectionChange, userRole, isO
   const menuItems: Array<{
     id: DashboardSection;
     label: string;
-    icon: string;
     adminOnly?: boolean;
     encargadoOnly?: boolean;
   }> = [
     {
       id: "dashboard",
-      label: "Dashboard",
-      icon: "📊",
+      label: "Dashboard"
     },
     {
       id: "reports",
       label: "Reportes Administrativos",
-      icon: "📈",
       adminOnly: true,
     },
     {
       id: "suppliers",
       label: "Compra a Proveedores",
-      icon: "🛒",
       adminOnly: true,
     },
     {
       id: "users",
       label: "Gestión de Usuarios",
-      icon: "👥",
       adminOnly: true,
     },
     {
       id: "payments",
       label: "Pago a Técnicos",
-      icon: "💵",
       adminOnly: true, // El encargado ve esto dentro de su dashboard, no como sección separada
     },
     {
       id: "orders",
       label: "Órdenes de Reparación",
-      icon: "🔧",
       // Tanto admin como encargado pueden ver órdenes, pero el encargado solo ve las de su sucursal
     },
     {
       id: "branches",
       label: "Gestión de Sucursales y Gastos",
-      icon: "🏢",
       // Tanto admin como encargado pueden ver esto, pero el encargado solo ve/agrega gastos hormiga de su sucursal
     },
     {
       id: "metrics",
       label: "Métricas y Análisis",
-      icon: "📊",
       adminOnly: true,
     },
   ];
@@ -124,7 +115,7 @@ export default function Sidebar({ currentSection, onSectionChange, userRole, isO
         className={`
           fixed lg:static
           top-20 left-0
-          w-64 bg-slate-50 border-r border-slate-200
+          w-64 bg-blue-200 border-r border-slate-200
           min-h-[calc(100vh-5rem)] h-[calc(100vh-5rem)]
           pb-4 overflow-y-auto
           z-50 lg:z-10
@@ -158,13 +149,13 @@ export default function Sidebar({ currentSection, onSectionChange, userRole, isO
                     onClose();
                   }
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                className={`w-full max-w-[200px] flex items-center justify-center gap-3 px-4 py-3 rounded-md transition-colors ${
                   isActive
                     ? "bg-brand text-white shadow-md"
                     : "text-slate-700 hover:bg-slate-200 hover:text-slate-900"
                 }`}
               >
-                <span className="text-xl">{item.icon}</span>
+                
                 <span className="font-medium text-sm">{item.label}</span>
               </button>
             );
