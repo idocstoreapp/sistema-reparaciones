@@ -146,6 +146,27 @@ export default function Dashboard() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentSection, setCurrentSection] = useState<DashboardSection>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return window.innerWidth;
+  });
+
+  const isDesktop = windowWidth >= 1024;
+  const isOpen = !isDesktop && sidebarOpen;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -376,10 +397,11 @@ export default function Dashboard() {
             currentSection={currentSection}
             onSectionChange={setCurrentSection}
             userRole={me.role}
-            isOpen={sidebarOpen}
+            isOpen={isOpen}
             onClose={() => setSidebarOpen(false)}
           />
         )}
+
         <main className={`flex-1 w-full ${hasSidebar ? 'lg:ml-64' : ''}`}>
           <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 flex flex-col min-h-[calc(100vh-5rem)]">
             {renderContent()}

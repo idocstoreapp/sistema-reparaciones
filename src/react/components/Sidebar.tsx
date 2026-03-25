@@ -23,23 +23,17 @@ interface SidebarProps {
 export default function Sidebar({ currentSection, onSectionChange, userRole, isOpen, onClose }: SidebarProps) {
   const [me, setMe] = useState<Profile | null>(null);
 
+  // Prevenir scroll del body cuando sidebar está abierto en móvil
   useEffect(() => {
-    async function loadProfile() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (profile) {
-        setMe(profile as Profile);
-      }
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
-    loadProfile();
-  }, []);
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
 
   // Solo mostrar sidebar para admin y encargados
   if (userRole !== "admin" && userRole !== "encargado") {
@@ -113,14 +107,14 @@ export default function Sidebar({ currentSection, onSectionChange, userRole, isO
       {/* Sidebar */}
       <aside
         className={`
-          fixed lg:static
-          top-20 left-0
+          fixed top-20 left-0
           w-64 bg-blue-200 border-r border-slate-200
           min-h-[calc(100vh-5rem)] h-[calc(100vh-5rem)]
           pb-4 overflow-y-auto
-          z-50 lg:z-10
+          z-50
           transform transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          lg:translate-x-0
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
         {/* Botón cerrar en móvil */}
