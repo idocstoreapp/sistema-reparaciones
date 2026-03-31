@@ -686,10 +686,14 @@ export default function SalarySettlementPanel({
     const totalToPay = (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)
       ? Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal)
       : grossAvailable; // Si no hay ajustes seleccionados ni abonos, mostrar todo el saldo
-    setCustomAmountInput(totalToPay);
+    // Solo forzar el monto automáticamente cuando hay ajustes seleccionados.
+    // Los abonos de préstamos NO deben sobrescribir un monto manual de pago parcial.
+    if (selectedAdjustmentsTotal > 0) {
+      setCustomAmountInput(totalToPay);
+    }
     
     // Si es pago mixto y hay ajustes seleccionados, inicializar proporción 50/50
-    if (paymentMethod === "efectivo/transferencia" && (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)) {
+    if (paymentMethod === "efectivo/transferencia" && selectedAdjustmentsTotal > 0) {
       if (totalToPay > 0 && (cashAmount === 0 && transferAmount === 0)) {
         setCashAmount(Math.round(totalToPay / 2));
         setTransferAmount(totalToPay - Math.round(totalToPay / 2));
@@ -715,6 +719,12 @@ export default function SalarySettlementPanel({
       : customAmountInput;
     return Math.max(0, netRemaining - paidAmount);
   }, [netRemaining, customAmountInput, cashAmount, transferAmount, paymentMethod]);
+
+  const draftPaidAmount = paymentMethod === "efectivo/transferencia"
+    ? Math.max(0, cashAmount + transferAmount)
+    : Math.max(0, customAmountInput);
+  const hasDraftPayment = draftPaidAmount > 0;
+  const pendingToDisplay = hasDraftPayment ? remainingBalance : netRemaining;
 
   function distributeDeduction(amountToDeduct: number) {
     let remaining = Math.max(0, Math.min(amountToDeduct, totalAdjustable));
@@ -886,8 +896,9 @@ export default function SalarySettlementPanel({
     // Esto asegura que se descuenten los ajustes y se pague el resto completo
     let targetAmount = Math.max(0, customAmountInput);
     
-    // Si hay ajustes seleccionados o abonos, forzar que se pague el resto completo
-    if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+    // Si hay ajustes seleccionados, forzar que se pague el resto completo
+    // (solo para mantener consistencia con el flujo de descuentos seleccionados)
+    if (selectedAdjustmentsTotal > 0) {
       const calculatedRest = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
       targetAmount = calculatedRest;
       setCustomAmountInput(calculatedRest);
@@ -1340,9 +1351,9 @@ export default function SalarySettlementPanel({
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
           <p className="text-xs text-slate-500">
-            {selectedAdjustmentsTotal > 0 ? "Total a liquidar" : "Total pendiente"}
+            {hasDraftPayment ? "Saldo pendiente tras este pago" : (selectedAdjustmentsTotal > 0 ? "Total a liquidar" : "Total pendiente")}
           </p>
-          <p className="text-lg font-semibold text-brand">${formatAmount(netRemaining)}</p>
+          <p className="text-lg font-semibold text-brand">${formatAmount(pendingToDisplay)}</p>
           {selectedAdjustmentsTotal === 0 && totalAdjustable > 0 && (
             <p className="text-xs text-slate-500 mt-1">
               Selecciona adelantos abajo para ver el total con descuentos
@@ -1448,10 +1459,10 @@ export default function SalarySettlementPanel({
                     inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
                     value={formatCLPInput(Math.max(0, customAmountInput))}
-                    disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
+                    disabled={netRemaining <= 0 || selectedAdjustmentsTotal > 0}
                     onChange={(e) => {
                       // Si hay ajustes seleccionados, no permitir modificar manualmente
-                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                      if (selectedAdjustmentsTotal > 0) {
                         return;
                       }
                       const parsed = parseCLPInput(e.target.value);
@@ -1461,7 +1472,7 @@ export default function SalarySettlementPanel({
                     }}
                   />
                 </label>
-                {(selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) && (
+                {selectedAdjustmentsTotal > 0 && (
                   <p className="text-xs text-amber-600 font-medium mt-1">
                     💡 El monto se calcula automáticamente después de descontar los ajustes seleccionados
                   </p>
@@ -1494,10 +1505,10 @@ export default function SalarySettlementPanel({
                     inputMode="numeric"
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm w-32"
                     value={formatCLPInput(Math.max(0, customAmountInput))}
-                    disabled={netRemaining <= 0 || (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0)}
+                    disabled={netRemaining <= 0 || selectedAdjustmentsTotal > 0}
                     onChange={(e) => {
                       // Si hay ajustes seleccionados, no permitir modificar manualmente
-                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                      if (selectedAdjustmentsTotal > 0) {
                         return;
                       }
                       const parsed = parseCLPInput(e.target.value);
@@ -1507,7 +1518,7 @@ export default function SalarySettlementPanel({
                     }}
                   />
                 </label>
-                {(selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) && (
+                {selectedAdjustmentsTotal > 0 && (
                   <p className="text-xs text-amber-600 font-medium mt-1">
                     💡 El monto se calcula automáticamente después de descontar los ajustes seleccionados
                   </p>
@@ -1545,7 +1556,7 @@ export default function SalarySettlementPanel({
                       const cash = Math.max(0, parsed);
                       const maxNetRemaining = Math.max(0, netRemaining);
                       // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
-                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                      if (selectedAdjustmentsTotal > 0) {
                         const totalFixed = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
                         const maxCash = Math.max(0, Math.min(cash, totalFixed));
                         setCashAmount(maxCash);
@@ -1582,7 +1593,7 @@ export default function SalarySettlementPanel({
                       const transfer = Math.max(0, parsed);
                       const maxNetRemaining = Math.max(0, netRemaining);
                       // Si hay ajustes seleccionados, el total está fijo, solo ajustar proporción
-                      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
+                      if (selectedAdjustmentsTotal > 0) {
                         const totalFixed = Math.max(0, grossAvailable - selectedAdjustmentsTotal - loanPaymentsTotal);
                         const maxTransfer = Math.max(0, totalFixed - Math.max(0, cashAmount));
                         const adjustedTransfer = Math.max(0, Math.min(transfer, maxTransfer));
@@ -2041,10 +2052,12 @@ export default function SalarySettlementPanel({
         
         {/* Mostrar Total Pendiente al final */}
         <div className="mt-4 pt-4 border-t-2 border-slate-300">
-          {netRemaining > 0 ? (
+          {pendingToDisplay > 0 ? (
             <div className="flex justify-between items-center bg-slate-50 rounded-md p-3">
-              <span className="text-sm font-semibold text-slate-700">Total Pendiente:</span>
-              <span className="text-lg font-bold text-amber-600">{formatAmount(netRemaining)}</span>
+              <span className="text-sm font-semibold text-slate-700">
+                {hasDraftPayment ? "Total pendiente tras este pago:" : "Total Pendiente:"}
+              </span>
+              <span className="text-lg font-bold text-amber-600">{formatAmount(pendingToDisplay)}</span>
             </div>
           ) : (
             <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-3">
@@ -2062,7 +2075,7 @@ export default function SalarySettlementPanel({
               </p>
             </div>
           )}
-          {netRemaining > 0 && (
+          {pendingToDisplay > 0 && (
             <div className="mt-2 space-y-1">
               {selectedAdjustmentsTotal === 0 && loanPaymentsTotal === 0 && totalAdjustable > 0 && (
                 <p className="text-xs text-slate-500 text-center">
@@ -2113,6 +2126,4 @@ export default function SalarySettlementPanel({
     </div>
   );
 }
-
-
 
