@@ -720,6 +720,12 @@ export default function SalarySettlementPanel({
     return Math.max(0, netRemaining - paidAmount);
   }, [netRemaining, customAmountInput, cashAmount, transferAmount, paymentMethod]);
 
+  const draftPaidAmount = paymentMethod === "efectivo/transferencia"
+    ? Math.max(0, cashAmount + transferAmount)
+    : Math.max(0, customAmountInput);
+  const hasDraftPayment = draftPaidAmount > 0;
+  const pendingToDisplay = hasDraftPayment ? remainingBalance : netRemaining;
+
   function distributeDeduction(amountToDeduct: number) {
     let remaining = Math.max(0, Math.min(amountToDeduct, totalAdjustable));
     const next: Record<string, number> = {};
@@ -1345,9 +1351,9 @@ export default function SalarySettlementPanel({
         </div>
         <div className="bg-white border border-slate-200 rounded-md p-3">
           <p className="text-xs text-slate-500">
-            {selectedAdjustmentsTotal > 0 ? "Total a liquidar" : "Total pendiente"}
+            {hasDraftPayment ? "Saldo pendiente tras este pago" : (selectedAdjustmentsTotal > 0 ? "Total a liquidar" : "Total pendiente")}
           </p>
-          <p className="text-lg font-semibold text-brand">${formatAmount(netRemaining)}</p>
+          <p className="text-lg font-semibold text-brand">${formatAmount(pendingToDisplay)}</p>
           {selectedAdjustmentsTotal === 0 && totalAdjustable > 0 && (
             <p className="text-xs text-slate-500 mt-1">
               Selecciona adelantos abajo para ver el total con descuentos
@@ -2046,10 +2052,12 @@ export default function SalarySettlementPanel({
         
         {/* Mostrar Total Pendiente al final */}
         <div className="mt-4 pt-4 border-t-2 border-slate-300">
-          {netRemaining > 0 ? (
+          {pendingToDisplay > 0 ? (
             <div className="flex justify-between items-center bg-slate-50 rounded-md p-3">
-              <span className="text-sm font-semibold text-slate-700">Total Pendiente:</span>
-              <span className="text-lg font-bold text-amber-600">{formatAmount(netRemaining)}</span>
+              <span className="text-sm font-semibold text-slate-700">
+                {hasDraftPayment ? "Total pendiente tras este pago:" : "Total Pendiente:"}
+              </span>
+              <span className="text-lg font-bold text-amber-600">{formatAmount(pendingToDisplay)}</span>
             </div>
           ) : (
             <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-3">
@@ -2067,7 +2075,7 @@ export default function SalarySettlementPanel({
               </p>
             </div>
           )}
-          {netRemaining > 0 && (
+          {pendingToDisplay > 0 && (
             <div className="mt-2 space-y-1">
               {selectedAdjustmentsTotal === 0 && loanPaymentsTotal === 0 && totalAdjustable > 0 && (
                 <p className="text-xs text-slate-500 text-center">
@@ -2118,5 +2126,4 @@ export default function SalarySettlementPanel({
     </div>
   );
 }
-
 
