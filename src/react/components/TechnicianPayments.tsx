@@ -55,6 +55,11 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
     transferencia: 0,
     efectivo_transferencia: 0,
   });
+  const [editingSettlementId, setEditingSettlementId] = useState<string | null>(null);
+  const [editingSettlementAmount, setEditingSettlementAmount] = useState<string>("");
+  const [editingSettlementNote, setEditingSettlementNote] = useState<string>("");
+  const [savingSettlementEdit, setSavingSettlementEdit] = useState(false);
+  const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
   const [techModalOpen, setTechModalOpen] = useState<string | null>(null);
   const technicianNameMap = useMemo(
     () =>
@@ -541,6 +546,87 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
     }
   }, [selectedTech, loadAdjustmentsForTech]);
 
+  const startEditingSettlement = useCallback((entry: SalarySettlement) => {
+    setEditingSettlementId(entry.id);
+    setEditingSettlementAmount(String(Math.max(0, entry.amount ?? 0)));
+    setEditingSettlementNote(entry.note ?? "");
+    setHistoryError(null);
+  }, []);
+
+  const cancelEditingSettlement = useCallback(() => {
+    setEditingSettlementId(null);
+    setEditingSettlementAmount("");
+    setEditingSettlementNote("");
+  }, []);
+
+  const handleSaveSettlementEdit = useCallback(
+    async (entry: SalarySettlement) => {
+      const parsedAmount = Number(editingSettlementAmount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        setHistoryError("El monto editado debe ser mayor a 0.");
+        return;
+      }
+
+      setSavingSettlementEdit(true);
+      setHistoryError(null);
+
+      const { error } = await supabase
+        .from("salary_settlements")
+        .update({
+          amount: Math.round(parsedAmount),
+          note: editingSettlementNote.trim() || null,
+        })
+        .eq("id", entry.id)
+        .eq("technician_id", entry.technician_id);
+
+      setSavingSettlementEdit(false);
+
+      if (error) {
+        console.error("Error editando liquidación:", error);
+        setHistoryError(`No pudimos editar el pago: ${error.message}`);
+        return;
+      }
+
+      cancelEditingSettlement();
+      await fetchHistoryWithFilters(historyFilters);
+      await loadWeeklyData();
+    },
+    [editingSettlementAmount, editingSettlementNote, cancelEditingSettlement, fetchHistoryWithFilters, historyFilters, loadWeeklyData]
+  );
+
+  const handleDeleteSettlement = useCallback(
+    async (entry: SalarySettlement) => {
+      const confirmed = window.confirm(
+        `¿Eliminar este pago por ${formatCLP(entry.amount)} del historial? Esta acción no se puede deshacer.`
+      );
+      if (!confirmed) return;
+
+      setDeletingSettlementId(entry.id);
+      setHistoryError(null);
+
+      const { error } = await supabase
+        .from("salary_settlements")
+        .delete()
+        .eq("id", entry.id)
+        .eq("technician_id", entry.technician_id);
+
+      setDeletingSettlementId(null);
+
+      if (error) {
+        console.error("Error eliminando liquidación:", error);
+        setHistoryError(`No pudimos eliminar el pago: ${error.message}`);
+        return;
+      }
+
+      if (editingSettlementId === entry.id) {
+        cancelEditingSettlement();
+      }
+      await fetchHistoryWithFilters(historyFilters);
+      await loadWeeklyData();
+    },
+    [cancelEditingSettlement, editingSettlementId, fetchHistoryWithFilters, historyFilters, loadWeeklyData]
+  );
+
   const handleDeleteAdjustment = useCallback(
     async (techId: string, adjustmentId: string) => {
       const techAdjustments = adjustmentsByTech[techId] ?? [];
@@ -835,11 +921,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                   const isMixedPayment = entry.payment_method === "efectivo/transferencia" && paymentBreakdown;
                   
                   return (
-                    <div
-                      key={entry.id}
-                      className="bg-white border border-slate-200 rounded-md p-3 text-sm"
-                    >
-                      <div className="flex justify-between items-center">
+                    <div key={entry.id} className="bg-white border border-slate-200 rounded-md p-3 text-sm">
+                      <div className="flex justify-between items-start gap-3">
                         <div>
                           <p className="font-semibold text-slate-800">
                             {technicianNameMap[entry.technician_id] || `Técnico (${entry.technician_id.slice(0, 8)}...)`}
@@ -889,8 +972,72 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                             )}
                           </div>
                         </div>
-                        <span className="font-semibold text-brand">{formatCLP(entry.amount)}</span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="font-semibold text-brand">{formatCLP(entry.amount)}</span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                              onClick={() => startEditingSettlement(entry)}
+                              disabled={savingSettlementEdit || deletingSettlementId === entry.id}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50"
+                              onClick={() => void handleDeleteSettlement(entry)}
+                              disabled={savingSettlementEdit || deletingSettlementId === entry.id}
+                            >
+                              {deletingSettlementId === entry.id ? "Eliminando..." : "Eliminar"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
+                      {editingSettlementId === entry.id && (
+                        <div className="mt-3 p-3 rounded-md border border-amber-200 bg-amber-50 space-y-2">
+                          <p className="text-xs font-semibold text-amber-700">Editar pago</p>
+                          <label className="text-xs text-slate-600 flex flex-col gap-1">
+                            Monto
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+                              value={editingSettlementAmount}
+                              onChange={(e) => setEditingSettlementAmount(e.target.value)}
+                            />
+                          </label>
+                          <label className="text-xs text-slate-600 flex flex-col gap-1">
+                            Nota
+                            <input
+                              type="text"
+                              className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+                              value={editingSettlementNote}
+                              onChange={(e) => setEditingSettlementNote(e.target.value)}
+                              placeholder="Opcional"
+                            />
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="text-xs px-3 py-1.5 rounded bg-brand-light text-white hover:bg-brand/90"
+                              onClick={() => void handleSaveSettlementEdit(entry)}
+                              disabled={savingSettlementEdit}
+                            >
+                              {savingSettlementEdit ? "Guardando..." : "Guardar cambios"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-white"
+                              onClick={cancelEditingSettlement}
+                              disabled={savingSettlementEdit}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1095,11 +1242,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                             const isMixedPayment = entry.payment_method === "efectivo/transferencia" && paymentBreakdown;
                             
                             return (
-                              <div
-                                key={entry.id}
-                                className="bg-white border border-slate-200 rounded-md p-3 text-sm"
-                              >
-                                <div className="flex justify-between items-center">
+                              <div key={entry.id} className="bg-white border border-slate-200 rounded-md p-3 text-sm">
+                                <div className="flex justify-between items-start gap-3">
                                   <div>
                                     <p className="font-semibold text-slate-800 text-lg">
                                       {formatCLP(entry.amount)}
@@ -1139,7 +1283,71 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                                       )}
                                     </div>
                                   </div>
+                                  <div className="flex flex-col items-end gap-2">
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                                        onClick={() => startEditingSettlement(entry)}
+                                        disabled={savingSettlementEdit || deletingSettlementId === entry.id}
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50"
+                                        onClick={() => void handleDeleteSettlement(entry)}
+                                        disabled={savingSettlementEdit || deletingSettlementId === entry.id}
+                                      >
+                                        {deletingSettlementId === entry.id ? "Eliminando..." : "Eliminar"}
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
+                                {editingSettlementId === entry.id && (
+                                  <div className="mt-3 p-3 rounded-md border border-amber-200 bg-amber-50 space-y-2">
+                                    <p className="text-xs font-semibold text-amber-700">Editar pago</p>
+                                    <label className="text-xs text-slate-600 flex flex-col gap-1">
+                                      Monto
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        step={1}
+                                        className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+                                        value={editingSettlementAmount}
+                                        onChange={(e) => setEditingSettlementAmount(e.target.value)}
+                                      />
+                                    </label>
+                                    <label className="text-xs text-slate-600 flex flex-col gap-1">
+                                      Nota
+                                      <input
+                                        type="text"
+                                        className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+                                        value={editingSettlementNote}
+                                        onChange={(e) => setEditingSettlementNote(e.target.value)}
+                                        placeholder="Opcional"
+                                      />
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        className="text-xs px-3 py-1.5 rounded bg-brand-light text-white hover:bg-brand/90"
+                                        onClick={() => void handleSaveSettlementEdit(entry)}
+                                        disabled={savingSettlementEdit}
+                                      >
+                                        {savingSettlementEdit ? "Guardando..." : "Guardar cambios"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-white"
+                                        onClick={cancelEditingSettlement}
+                                        disabled={savingSettlementEdit}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
