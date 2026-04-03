@@ -259,11 +259,11 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         returnsTotals[tech.id] =
           returnedData?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
         settlementTotals[tech.id] = (settlementAmounts ?? []).reduce((sum, settlement: any) => {
-          const adjustmentsTotal = settlement?.details?.selected_adjustments_total;
-          const loanPaymentsTotal = settlement?.details?.loan_payments_total;
-          const discountedAdjustments = typeof adjustmentsTotal === "number" ? adjustmentsTotal : 0;
-          const loanPayments = typeof loanPaymentsTotal === "number" ? loanPaymentsTotal : 0;
-          return sum + (settlement?.amount ?? 0) + discountedAdjustments + loanPayments;
+          // Para el listado principal mostramos saldo "a pagar":
+          // restamos solo pagos reales registrados (amount).
+          // No incluimos descuentos ni abonos de préstamo en este cálculo
+          // para evitar dejar el saldo en 0 cuando todavía hay dinero por pagar.
+          return sum + (settlement?.amount ?? 0);
         }, 0);
         })
       );
