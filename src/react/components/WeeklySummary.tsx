@@ -17,7 +17,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     weekAdjustments: 0,
     weekNet: 0,
     pendingCount: 0,
-    monthGain: 0,
+    monthPaid: 0,
     returnsAndCancellations: 0,
     totalReturnsAndCancellations: 0,
   });
@@ -98,15 +98,14 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       
       const weekError = result1.error || result2.error;
 
-      // Consulta para órdenes pagadas del mes actual
-      // Usar paid_at para filtrar por mes (retrocompatibilidad: órdenes sin payout_week usan paid_at)
-      const { data: month, error: monthError } = await supabase
-        .from("orders")
-        .select("*")
+      // Consulta para pagos (liquidaciones) del mes actual
+      // KPI de mes debe reflejar cuánto le pagó el admin al técnico durante el mes
+      const { data: monthSettlements, error: monthSettlementsError } = await supabase
+        .from("salary_settlements")
+        .select("amount, created_at")
         .eq("technician_id", technicianId)
-        .eq("status", "paid")
-        .gte("paid_at", msUTC.toISOString())
-        .lte("paid_at", meUTC.toISOString());
+        .gte("created_at", msUTC.toISOString())
+        .lte("created_at", meUTC.toISOString());
 
       // Consulta para total histórico de devoluciones/cancelaciones (sin límite de tiempo)
       const { data: totalReturns, error: totalReturnsError } = await supabase
@@ -141,8 +140,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       if (weekError) {
         console.error("Error loading week orders:", weekError);
       }
-      if (monthError) {
-        console.error("Error loading month orders:", monthError);
+      if (monthSettlementsError) {
+        console.error("Error loading month settlements:", monthSettlementsError);
       }
       if (totalReturnsError) {
         console.error("Error loading total returns:", totalReturnsError);
@@ -155,7 +154,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       }
 
       const weekOrders = week ?? [];
-      const monthOrders = month ?? [];
+      const settlementsInMonth = monthSettlements ?? [];
       const adjustmentsList = weeklyAdjustments ?? [];
 
       // Contar todas las órdenes pagadas de la semana actual (basado en payout_week)
@@ -172,9 +171,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       const allPending = allPendingOrders ?? [];
       const pendingCount = allPending.length; // Contar cantidad de órdenes pendientes
       
-      // Total del mes: suma de comisiones de órdenes pagadas del mes actual
-      // Basado en payout_year y filtrado por paid_at para retrocompatibilidad
-      const monthGain = monthOrders.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
+      // Total pagado del mes: suma de liquidaciones registradas al técnico en el mes actual
+      const monthPaid = settlementsInMonth.reduce((s, settlement) => s + (settlement.amount ?? 0), 0);
 
       // Contar devoluciones y cancelaciones (garantías) de la semana
       const returnsAndCancellations = weekOrders.filter(
@@ -197,7 +195,7 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         weekAdjustments: weekAdjustmentsTotal,
         weekNet,
         pendingCount,
-        monthGain,
+        monthPaid,
         returnsAndCancellations,
         totalReturnsAndCancellations,
       });
@@ -279,8 +277,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
         icon="⏳"
       />
       <KpiCard
-        title="Total del Mes (Con Recibo)"
-        value={formatCLP(kpis.monthGain)}
+        title="Total Pagado del Mes"
+        value={formatCLP(kpis.monthPaid)}
         icon="📊"
       />
       <KpiCard
