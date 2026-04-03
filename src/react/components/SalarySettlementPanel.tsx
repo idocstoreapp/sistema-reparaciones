@@ -724,7 +724,10 @@ export default function SalarySettlementPanel({
     ? Math.max(0, cashAmount + transferAmount)
     : Math.max(0, customAmountInput);
   const hasDraftPayment = draftPaidAmount > 0;
-  const pendingToDisplay = hasDraftPayment ? remainingBalance : netRemaining;
+  // Mostrar siempre el saldo real tras descuentos seleccionados.
+  // El "pendiente tras este pago" se informa por separado para evitar confusión
+  // cuando el monto a pagar se autocompleta.
+  const pendingToDisplay = netRemaining;
 
   function distributeDeduction(amountToDeduct: number) {
     let remaining = Math.max(0, Math.min(amountToDeduct, totalAdjustable));
@@ -2053,15 +2056,23 @@ export default function SalarySettlementPanel({
         {/* Mostrar Total Pendiente al final */}
         <div className="mt-4 pt-4 border-t-2 border-slate-300">
           {pendingToDisplay > 0 ? (
-            <div className="flex justify-between items-center bg-slate-50 rounded-md p-3">
-              <span className="text-sm font-semibold text-slate-700">
-                {hasDraftPayment ? "Total pendiente tras este pago:" : "Total Pendiente:"}
-              </span>
-              <span className="text-lg font-bold text-amber-600">{formatAmount(pendingToDisplay)}</span>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center bg-slate-50 rounded-md p-3">
+                <span className="text-sm font-semibold text-slate-700">Estado del saldo (tras descuentos):</span>
+                <span className="text-lg font-bold text-amber-600">{formatAmount(pendingToDisplay)}</span>
+              </div>
+              {hasDraftPayment && (
+                <div className="flex justify-between items-center bg-sky-50 border border-sky-200 rounded-md p-3">
+                  <span className="text-sm font-semibold text-sky-700">Pendiente si registras este pago:</span>
+                  <span className="text-lg font-bold text-sky-700">{formatAmount(remainingBalance)}</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-3">
-              <span className="text-sm font-semibold text-amber-700">Estado del Saldo:</span>
+              <span className="text-sm font-semibold text-slate-700">
+                {hasDraftPayment ? "Total pendiente tras este pago:" : "Estado del Saldo:"}
+              </span>
               <span className="text-lg font-bold text-amber-600">CLP $0</span>
             </div>
           )}
@@ -2126,4 +2137,3 @@ export default function SalarySettlementPanel({
     </div>
   );
 }
-

@@ -185,7 +185,8 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
       const totalReturnsAndCancellations = (totalReturns ?? []).length;
 
       const weekAdjustmentsTotal = adjustmentsList.reduce(
-        (sum, adj) => sum + (adj?.amount ?? 0),
+        // Normalizar para evitar KPI negativo/confuso cuando hay registros con signo
+        (sum, adj) => sum + Math.abs(adj?.amount ?? 0),
         0
       );
       const weekNet = Math.max(weekGain - weekAdjustmentsTotal, 0);
@@ -297,4 +298,3 @@ export default function WeeklySummary({ technicianId, refreshKey = 0 }: WeeklySu
     </div>
   );
 }
-

@@ -1053,10 +1053,12 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           const adjustmentTotal = weeklyAdjustmentTotals[tech.id] ?? 0;
           const returnsTotal = weeklyReturnsTotals[tech.id] ?? 0;
           const settlementTotal = weeklySettlementTotals[tech.id] ?? 0;
-          const netBeforeSettlement = Math.max(weeklyTotal - adjustmentTotal - returnsTotal, 0);
-          const netTotal = Math.max(netBeforeSettlement - settlementTotal, 0);
-          const pendingDebt = Math.max(settlementTotal - netBeforeSettlement, 0);
-          const baseAmountForSettlement = Math.max(weeklyTotal - returnsTotal, 0);
+          // IMPORTANTE:
+          // El "Saldo disponible para liquidar" del listado debe coincidir con el
+          // "Total pendiente" del detalle (SalarySettlementPanel).
+          // En el detalle, ese valor se calcula como baseAmount - settledAmount.
+          // No restamos ajustes/devoluciones aquí para evitar mostrar 0 incorrectamente.
+          const pendingToSettle = Math.max(weeklyTotal - settlementTotal, 0);
           const isSelected = selectedTech === tech.id;
           const isSettlementOpen = openSettlementPanels[tech.id] ?? false;
           const cardAdjustments = adjustmentsByTech[tech.id] ?? [];
@@ -1092,7 +1094,14 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                         (Devoluciones: -{formatCLP(returnsTotal)})
                       </span>
                     )}
-                    <span className="ml-2 text-xs text-slate-500">(Saldo disponible: {formatCLP(netTotal, { withLabel: true })})</span>
+                    {adjustmentTotal > 0 && (
+                      <span className="ml-2 text-xs text-slate-500">
+                        (Descuentos pendientes: {formatCLP(adjustmentTotal)})
+                      </span>
+                    )}
+                    <span className="ml-2 text-xs text-slate-500">
+                      (Saldo disponible para liquidar: {formatCLP(pendingToSettle, { withLabel: true })})
+                    </span>
                   </div>
                 </div>
                 <div className="text-2xl">▶</div>
