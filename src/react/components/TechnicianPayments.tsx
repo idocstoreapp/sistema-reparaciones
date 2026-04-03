@@ -23,7 +23,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
   const [weeklyTotals, setWeeklyTotals] = useState<Record<string, number>>({});
   const [weeklyAdjustmentTotals, setWeeklyAdjustmentTotals] = useState<Record<string, number>>({});
   const [weeklyReturnsTotals, setWeeklyReturnsTotals] = useState<Record<string, number>>({});
-  const [weeklySettlementTotals, setWeeklySettlementTotals] = useState<Record<string, number>>({});
+  const [weeklyPendingTotals, setWeeklyPendingTotals] = useState<Record<string, number>>({});
   const [openSettlementPanels, setOpenSettlementPanels] = useState<Record<string, boolean>>({});
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [loadingDetailsByTech, setLoadingDetailsByTech] = useState<Record<string, boolean>>({});
@@ -163,7 +163,9 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
       const totals: Record<string, number> = {};
       const adjustmentTotals: Record<string, number> = {};
       const returnsTotals: Record<string, number> = {};
-    const settlementTotals: Record<string, number> = {};
+      const pendingTotals: Record<string, number> = {};
+      const { start } = currentWeekRange();
+      const weekStartISO = start.toISOString().slice(0, 10);
 
       await Promise.all(
         technicians.map(async (tech) => {
@@ -195,7 +197,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           { data: paidOrders },
           { data: returnedData },
           { data: adjustmentsData, error: adjustmentsError },
-          { data: settlementAmounts },
+          { data: weekSettlements },
         ] = await Promise.all([
           ordersQuery,
           returnsQuery,
@@ -203,7 +205,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           supabase
             .from("salary_settlements")
             .select("amount, details")
-            .eq("technician_id", tech.id),
+            .eq("technician_id", tech.id)
+            .eq("week_start", weekStartISO),
         ]);
 
         // Si hay error al cargar aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
@@ -258,20 +261,23 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         adjustmentTotals[tech.id] = adjustmentsForWeek;
         returnsTotals[tech.id] =
           returnedData?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
-        settlementTotals[tech.id] = (settlementAmounts ?? []).reduce((sum, settlement: any) => {
+        const weekSettled = (weekSettlements ?? []).reduce((sum: number, settlement: any) => {
           const adjustmentsTotal = settlement?.details?.selected_adjustments_total;
           const loanPaymentsTotal = settlement?.details?.loan_payments_total;
           const discountedAdjustments = typeof adjustmentsTotal === "number" ? adjustmentsTotal : 0;
           const loanPayments = typeof loanPaymentsTotal === "number" ? loanPaymentsTotal : 0;
           return sum + (settlement?.amount ?? 0) + discountedAdjustments + loanPayments;
         }, 0);
+        // Debe coincidir con el KPI "Total pendiente" del detalle:
+        // baseAmount (total ganado acumulado) - settledAmount (liquidado semana actual).
+        pendingTotals[tech.id] = Math.max((totals[tech.id] ?? 0) - weekSettled, 0);
         })
       );
 
       setWeeklyTotals(totals);
       setWeeklyAdjustmentTotals(adjustmentTotals);
       setWeeklyReturnsTotals(returnsTotals);
-    setWeeklySettlementTotals(settlementTotals);
+      setWeeklyPendingTotals(pendingTotals);
   }, [technicians]);
 
   useEffect(() => {
@@ -1052,11 +1058,8 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           const weeklyTotal = weeklyTotals[tech.id] ?? 0;
           const adjustmentTotal = weeklyAdjustmentTotals[tech.id] ?? 0;
           const returnsTotal = weeklyReturnsTotals[tech.id] ?? 0;
-          const settlementTotal = weeklySettlementTotals[tech.id] ?? 0;
-          const netBeforeSettlement = Math.max(weeklyTotal - adjustmentTotal - returnsTotal, 0);
-          const netTotal = Math.max(netBeforeSettlement - settlementTotal, 0);
-          const pendingDebt = Math.max(settlementTotal - netBeforeSettlement, 0);
-          const baseAmountForSettlement = Math.max(weeklyTotal - returnsTotal, 0);
+          // Saldo semanal disponible para liquidar (alineado con el cálculo semanal del detalle).
+          const pendingToSettle = weeklyPendingTotals[tech.id] ?? 0;
           const isSelected = selectedTech === tech.id;
           const isSettlementOpen = openSettlementPanels[tech.id] ?? false;
           const cardAdjustments = adjustmentsByTech[tech.id] ?? [];
@@ -1092,7 +1095,14 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                         (Devoluciones: -{formatCLP(returnsTotal)})
                       </span>
                     )}
-                    <span className="ml-2 text-xs text-slate-500">(Saldo disponible: {formatCLP(netTotal, { withLabel: true })})</span>
+                    {adjustmentTotal > 0 && (
+                      <span className="ml-2 text-xs text-slate-500">
+                        (Descuentos pendientes: {formatCLP(adjustmentTotal)})
+                      </span>
+                    )}
+                    <span className="ml-2 text-xs text-slate-500">
+                      (Saldo disponible para liquidar: {formatCLP(pendingToSettle, { withLabel: true })})
+                    </span>
                   </div>
                 </div>
                 <div className="text-2xl">▶</div>
