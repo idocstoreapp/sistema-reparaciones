@@ -662,15 +662,6 @@ export default function WeeklyReport({ technicianId, refreshKey = 0, userRole }:
           <span className={`font-semibold ${netAfterSettlements >= 0 ? 'text-brand' : 'text-red-600'}`}>
             {formatCLP(Math.max(0, netAfterSettlements))}
           </span>
-          {netAfterSettlements < 0 && (
-            <span className="text-xs text-red-600 ml-2">
-              (Se pagó {formatCLP(Math.abs(netAfterSettlements))} de más)
-            </span>
-          )}
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-slate-600">Liquidado esta semana:</span>
-          <span className="font-semibold text-sky-600">{formatCLP(settledAmount)}</span>
         </div>
         {netAfterSettlements > 0 && (
           <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded-md p-2">

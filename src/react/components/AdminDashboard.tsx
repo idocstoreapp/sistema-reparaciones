@@ -43,6 +43,7 @@ export default function AdminDashboard() {
           .from("orders")
           .select("*")
           .eq("status", "paid")
+          .not("receipt_number", "is", null)
           .or(`and(paid_at.gte.${monthStartUTC.toISOString()},paid_at.lte.${monthEndUTC.toISOString()}),and(paid_at.is.null,created_at.gte.${monthStartUTC.toISOString()},created_at.lte.${monthEndUTC.toISOString()})`);
 
         if (paidError) {
