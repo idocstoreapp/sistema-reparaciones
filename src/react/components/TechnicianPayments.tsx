@@ -164,9 +164,6 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
       const adjustmentTotals: Record<string, number> = {};
       const returnsTotals: Record<string, number> = {};
       const pendingTotals: Record<string, number> = {};
-      const { start } = currentWeekRange();
-      const weekStartISO = start.toISOString().slice(0, 10);
-
       await Promise.all(
         technicians.map(async (tech) => {
         // IMPORTANTE:
@@ -197,7 +194,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           { data: paidOrders },
           { data: returnedData },
           { data: adjustmentsData, error: adjustmentsError },
-          { data: weekSettlements },
+          { data: allSettlements },
         ] = await Promise.all([
           ordersQuery,
           returnsQuery,
@@ -205,8 +202,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
           supabase
             .from("salary_settlements")
             .select("amount, details")
-            .eq("technician_id", tech.id)
-            .eq("week_start", weekStartISO),
+            .eq("technician_id", tech.id),
         ]);
 
         // Si hay error al cargar aplicaciones, intentar sin aplicaciones (retrocompatibilidad)
@@ -261,16 +257,19 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         adjustmentTotals[tech.id] = adjustmentsForWeek;
         returnsTotals[tech.id] =
           returnedData?.reduce((s, o) => s + (o.commission_amount ?? 0), 0) ?? 0;
-        const weekSettled = (weekSettlements ?? []).reduce((sum: number, settlement: any) => {
+        // IMPORTANTE:
+        // Para el "Saldo disponible para liquidar" debemos restar TODO lo ya pagado
+        // históricamente por el admin, no solo la semana actual.
+        const totalSettled = (allSettlements ?? []).reduce((sum: number, settlement: any) => {
           const adjustmentsTotal = settlement?.details?.selected_adjustments_total;
           const loanPaymentsTotal = settlement?.details?.loan_payments_total;
           const discountedAdjustments = typeof adjustmentsTotal === "number" ? adjustmentsTotal : 0;
           const loanPayments = typeof loanPaymentsTotal === "number" ? loanPaymentsTotal : 0;
           return sum + (settlement?.amount ?? 0) + discountedAdjustments + loanPayments;
         }, 0);
-        // Debe coincidir con el KPI "Total pendiente" del detalle:
-        // baseAmount (total ganado acumulado) - settledAmount (liquidado semana actual).
-        pendingTotals[tech.id] = Math.max((totals[tech.id] ?? 0) - weekSettled, 0);
+        // Debe reflejar el saldo real no liquidado:
+        // total ganado acumulado - total liquidado acumulado.
+        pendingTotals[tech.id] = Math.max((totals[tech.id] ?? 0) - totalSettled, 0);
         })
       );
 
