@@ -68,6 +68,21 @@ export interface SalaryAdjustment {
   amount: number;
   note?: string | null;
   available_from?: string | null;
+  status?: "pending" | "partial" | "settled" | null;
+  settled_at?: string | null;
+  settled_by?: string | null;
+}
+
+export interface SalaryLoanPayment {
+  id: string;
+  loan_id: string;
+  technician_id: string;
+  amount: number;
+  payment_date: string;
+  note?: string | null;
+  settlement_id?: string | null;
+  created_by?: string | null;
+  created_at: string;
 }
 
 export interface SalaryAdjustmentApplication {

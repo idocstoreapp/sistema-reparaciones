@@ -2,223 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { currentWeekRange, formatDate } from "@/lib/date";
 import { formatCLP, formatCLPInput, parseCLPInput } from "@/lib/currency";
-import type { SalaryAdjustment, SalaryAdjustmentApplication } from "@/types";
-
-// Componente para gestionar préstamos
-function LoanManagementCard({ 
-  loan, 
-  technicianId, 
-  onUpdate, 
-  canEdit 
-}: { 
-  loan: AdjustmentWithPending; 
-  technicianId: string;
-  onUpdate: () => void;
-  canEdit: boolean;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editAmount, setEditAmount] = useState(loan.amount.toString());
-  const [editNote, setEditNote] = useState(loan.note || '');
-  const [saving, setSaving] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
-  const [paymentNote, setPaymentNote] = useState('');
-  const [addingPayment, setAddingPayment] = useState(false);
-
-  const handleSaveEdit = async () => {
-    if (!canEdit) return;
-    setSaving(true);
-    const newAmount = parseFloat(editAmount) || 0;
-    
-    const { error } = await supabase
-      .from("salary_adjustments")
-      .update({ 
-        amount: newAmount,
-        note: editNote || null
-      })
-      .eq("id", loan.id);
-    
-    if (error) {
-      alert(`Error al actualizar préstamo: ${error.message}`);
-    } else {
-      setIsEditing(false);
-      onUpdate();
-    }
-    setSaving(false);
-  };
-
-  const handleAddPayment = async () => {
-    if (!canEdit) return;
-    const amount = parseFloat(paymentAmount) || 0;
-    if (amount <= 0) {
-      alert("El monto del pago debe ser mayor a 0");
-      return;
-    }
-    
-    setAddingPayment(true);
-    
-    // Actualizar el monto del préstamo restando el pago
-    const currentAmount = parseFloat(editAmount) || loan.amount;
-    const newAmount = Math.max(0, currentAmount - amount);
-    
-    const paymentInfo = `Pago de ${formatCLP(amount)} el ${formatDate(paymentDate)}${paymentNote ? ` - ${paymentNote}` : ''}`;
-    const updatedNote = loan.note 
-      ? `${loan.note}\n${paymentInfo}`
-      : paymentInfo;
-    
-    const { error } = await supabase
-      .from("salary_adjustments")
-      .update({ 
-        amount: newAmount,
-        note: updatedNote
-      })
-      .eq("id", loan.id);
-    
-    if (error) {
-      alert(`Error al registrar pago: ${error.message}`);
-    } else {
-      setPaymentAmount('');
-      setPaymentNote('');
-      setPaymentDate(new Date().toISOString().slice(0, 10));
-      setEditAmount(newAmount.toString());
-      onUpdate();
-    }
-    setAddingPayment(false);
-  };
-
-  return (
-    <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
-      {!isEditing ? (
-        <div className="space-y-2">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-semibold text-purple-700">💰 Préstamo</span>
-                {loan.note && (
-                  <span className="text-xs text-purple-600">• {loan.note.split('\n')[0]}</span>
-                )}
-              </div>
-              <div className="text-sm font-semibold text-purple-800 mb-1">
-                Saldo pendiente: {formatCLP(loan.amount)}
-              </div>
-              {loan.amount === 0 && (
-                <div className="text-xs text-emerald-600 font-medium">
-                  ✅ Préstamo saldado completamente
-                </div>
-              )}
-              {loan.note && loan.note.includes('\n') && (
-                <div className="mt-2 pt-2 border-t border-purple-200">
-                  <p className="text-xs font-semibold text-purple-700 mb-1">Historial de pagos:</p>
-                  <div className="text-xs text-purple-600 space-y-1">
-                    {loan.note.split('\n').slice(1).map((line, idx) => (
-                      <div key={idx} className="pl-2 border-l-2 border-purple-300">{line}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="ml-3 px-3 py-1 text-xs font-medium rounded-md border border-purple-500 text-purple-600 hover:bg-purple-100"
-              >
-                ✏️ Editar
-              </button>
-            )}
-          </div>
-          
-          {canEdit && (
-            <div className="mt-3 pt-3 border-t border-purple-200">
-              <p className="text-xs font-semibold text-purple-700 mb-2">Agregar Pago:</p>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Monto"
-                  value={formatCLPInput(paymentAmount ? parseCLPInput(paymentAmount) : "")}
-                  onChange={(e) => {
-                    const parsed = parseCLPInput(e.target.value);
-                    setPaymentAmount(parsed > 0 ? parsed.toString() : "");
-                  }}
-                  className="border border-purple-300 rounded px-2 py-1 text-xs"
-                />
-                <input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="border border-purple-300 rounded px-2 py-1 text-xs"
-                />
-                <input
-                  type="text"
-                  placeholder="Nota (opcional)"
-                  value={paymentNote}
-                  onChange={(e) => setPaymentNote(e.target.value)}
-                  className="border border-purple-300 rounded px-2 py-1 text-xs"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleAddPayment}
-                disabled={addingPayment || !paymentAmount}
-                className="mt-2 px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
-              >
-                {addingPayment ? "Guardando..." : "➕ Agregar Pago"}
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div>
-            <label className="text-xs text-purple-700 font-medium">Monto del préstamo:</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={formatCLPInput(editAmount ? parseCLPInput(editAmount) : "")}
-              onChange={(e) => {
-                const parsed = parseCLPInput(e.target.value);
-                setEditAmount(parsed > 0 ? parsed.toString() : "");
-              }}
-              className="w-full border border-purple-300 rounded px-2 py-1 text-sm mt-1"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-purple-700 font-medium">Nota:</label>
-            <textarea
-              value={editNote}
-              onChange={(e) => setEditNote(e.target.value)}
-              className="w-full border border-purple-300 rounded px-2 py-1 text-sm mt-1"
-              rows={3}
-              placeholder="Descripción del préstamo..."
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSaveEdit}
-              disabled={saving}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
-            >
-              {saving ? "Guardando..." : "💾 Guardar"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsEditing(false);
-                setEditAmount(loan.amount.toString());
-                setEditNote(loan.note || '');
-              }}
-              className="px-3 py-1 text-xs font-medium rounded-md border border-purple-300 text-purple-600 hover:bg-purple-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+import type { SalaryAdjustment, SalaryAdjustmentApplication, SalaryLoanPayment } from "@/types";
 
 type AdjustmentWithPending = SalaryAdjustment & {
   remaining: number;
@@ -226,6 +10,7 @@ type AdjustmentWithPending = SalaryAdjustment & {
   isCurrentWeek: boolean;
   availableFromDate: Date;
   isAvailableThisWeek: boolean;
+  payments?: SalaryLoanPayment[];
 };
 
 interface SalarySettlementPanelProps {
@@ -257,6 +42,7 @@ export default function SalarySettlementPanel({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [applicationsSupported, setApplicationsSupported] = useState(true);
+  const [loanPaymentsSupported, setLoanPaymentsSupported] = useState(true);
   const [setupWarning, setSetupWarning] = useState<string | null>(null);
   const [settledAmount, setSettledAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "efectivo/transferencia" | "">("");
@@ -392,6 +178,40 @@ export default function SalarySettlementPanel({
         applications?: SalaryAdjustmentApplication[];
       })[];
 
+    let loanPaymentsByLoanId: Record<string, SalaryLoanPayment[]> = {};
+    const loanIds = adjustmentsData
+      .filter((adj) => adj.type === "loan")
+      .map((adj) => adj.id);
+
+    if (loanIds.length > 0 && loanPaymentsSupported) {
+      const { data: loanPaymentsData, error: loanPaymentsError } = await supabase
+        .from("salary_loan_payments")
+        .select("*")
+        .eq("technician_id", technicianId)
+        .in("loan_id", loanIds)
+        .order("payment_date", { ascending: false });
+
+      if (loanPaymentsError) {
+        const msg = loanPaymentsError.message?.toLowerCase() ?? "";
+        if (msg.includes("salary_loan_payments") || msg.includes("does not exist")) {
+          setLoanPaymentsSupported(false);
+          setSetupWarning(
+            "Para registrar abonos formales de préstamos ejecuta el script `database/add_salary_loan_payments.sql` en Supabase."
+          );
+        } else {
+          console.error("Error cargando abonos de préstamos:", loanPaymentsError);
+        }
+      } else {
+        loanPaymentsByLoanId = ((loanPaymentsData ?? []) as SalaryLoanPayment[]).reduce(
+          (acc, payment) => {
+            acc[payment.loan_id] = [...(acc[payment.loan_id] ?? []), payment];
+            return acc;
+          },
+          {} as Record<string, SalaryLoanPayment[]>
+        );
+      }
+    }
+
     console.log("📊 [SalarySettlementPanel] Cargando ajustes:", {
       totalAjustes: adjustmentsData.length,
       applicationsSupported,
@@ -422,13 +242,24 @@ export default function SalarySettlementPanel({
             : createdDate;
           availableFromDate.setHours(0, 0, 0, 0);
           const isAvailableThisWeek = availableFromDate <= weekEndDate;
-          
-          // Para préstamos, remaining = amount (se actualiza manualmente con pagos)
-          // NO se calcula con aplicaciones porque los préstamos no tienen aplicaciones
+          const loanPaymentsHistory = loanPaymentsByLoanId[adj.id] ?? [];
+          const appliedTotal = loanPaymentsHistory.reduce(
+            (sum, payment) => sum + (payment.amount ?? 0),
+            0
+          );
+
+          // Para préstamos, el saldo pendiente se calcula desde el ledger formal
+          // salary_loan_payments. Si la tabla aún no existe, se conserva el
+          // comportamiento anterior usando amount como saldo actual.
+          const remaining = loanPaymentsSupported
+            ? Math.max((adj.amount ?? 0) - appliedTotal, 0)
+            : (adj.amount ?? 0);
+
           return {
             ...adj,
-            appliedTotal: 0, // Préstamos no tienen aplicaciones
-            remaining: adj.amount ?? 0, // Monto actual del préstamo
+            appliedTotal,
+            remaining,
+            payments: loanPaymentsHistory,
             availableFromDate,
             isAvailableThisWeek,
             isCurrentWeek: createdDate >= weekStartDate && createdDate <= weekEndDate,
@@ -494,6 +325,7 @@ export default function SalarySettlementPanel({
     // Inicializar selección de ajustes cuando se cargan
     const newSelections: Record<string, { selected: boolean; amount: number }> = {};
     normalized.forEach((adj) => {
+      if (adj.type === "loan") return;
       if (!selectedAdjustments[adj.id]) {
         newSelections[adj.id] = {
           selected: false,
@@ -510,7 +342,7 @@ export default function SalarySettlementPanel({
       const next: Record<string, number> = {};
       normalized.forEach((adj) => {
         const previousValue = prev[adj.id];
-        if (!adj.isAvailableThisWeek) {
+        if (adj.type === "loan" || !adj.isAvailableThisWeek) {
           next[adj.id] = 0;
           return;
         }
@@ -594,14 +426,14 @@ export default function SalarySettlementPanel({
   );
 
   const availableAdjustments = useMemo(
-    () => pendingAdjustments.filter((adj) => adj.isAvailableThisWeek),
+    () => pendingAdjustments.filter((adj) => adj.type !== "loan" && adj.isAvailableThisWeek && adj.remaining > 0),
     [pendingAdjustments]
   );
 
   const deferredHoldback = useMemo(
     () =>
       pendingAdjustments.reduce((sum, adj) => {
-        if (!adj.isAvailableThisWeek && adj.availableFromDate > weekEndDate) {
+        if (adj.type !== "loan" && !adj.isAvailableThisWeek && adj.availableFromDate > weekEndDate) {
           return sum + adj.remaining;
         }
         return sum;
@@ -733,7 +565,7 @@ export default function SalarySettlementPanel({
     let remaining = Math.max(0, Math.min(amountToDeduct, totalAdjustable));
     const next: Record<string, number> = {};
     pendingAdjustments.forEach((adj) => {
-      if (!adj.isAvailableThisWeek) {
+      if (adj.type === "loan" || !adj.isAvailableThisWeek) {
         next[adj.id] = 0;
         return;
       }
@@ -822,6 +654,59 @@ export default function SalarySettlementPanel({
   }
   const canEditAdjustments = context === "admin";
 
+  async function handleSaveLoanPayment(loan: AdjustmentWithPending) {
+    if (!canEditAdjustments) return;
+    const payment = loanPayments[loan.id];
+    const amount = payment?.amount ?? 0;
+
+    if (!loanPaymentsSupported) {
+      setErrorMsg("No se pueden guardar abonos formales hasta ejecutar `database/add_salary_loan_payments.sql` en Supabase.");
+      return;
+    }
+
+    if (amount <= 0) {
+      setErrorMsg("Ingresa un monto de abono mayor a 0.");
+      return;
+    }
+
+    if (amount > loan.remaining) {
+      setErrorMsg(`El abono no puede exceder el saldo pendiente del préstamo (${formatCLP(loan.remaining)}).`);
+      return;
+    }
+
+    setSaving(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase.rpc("register_loan_payment", {
+      p_loan_id: loan.id,
+      p_technician_id: technicianId,
+      p_amount: amount,
+      p_payment_date: payment?.date || new Date().toISOString().slice(0, 10),
+      p_note: payment?.note || null,
+      p_settlement_id: null,
+      p_created_by: userData?.user?.id ?? null,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      console.error("Error guardando abono de préstamo:", error);
+      setErrorMsg(`No pudimos guardar el abono del préstamo: ${error.message}`);
+      return;
+    }
+
+    setLoanPayments((prev) => {
+      const next = { ...prev };
+      delete next[loan.id];
+      return next;
+    });
+    setSuccessMsg(`✅ Abono de préstamo guardado por ${formatCLP(amount)}.`);
+    await loadPendingAdjustments();
+    window.dispatchEvent(new CustomEvent('settlementCreated'));
+  }
+
   async function handleDeleteAdjustment(adjustmentId: string) {
     const target = pendingAdjustments.find((adj) => adj.id === adjustmentId);
     if (!target) {
@@ -889,7 +774,7 @@ export default function SalarySettlementPanel({
     // Validar que netRemaining no sea negativo
     const maxNetRemaining = Math.max(0, netRemaining);
     
-    if (maxNetRemaining <= 0) {
+    if (maxNetRemaining <= 0 && loanPaymentsTotal <= 0) {
       setErrorMsg("El técnico no tiene saldo pendiente. No se puede registrar un pago adicional.");
       return;
     }
@@ -949,12 +834,8 @@ export default function SalarySettlementPanel({
     }
     
     // Validar que el monto a pagar sea mayor a 0
-    if (targetAmount <= 0) {
-      if (selectedAdjustmentsTotal > 0 || loanPaymentsTotal > 0) {
-        setErrorMsg("No hay monto restante para pagar después de descontar los ajustes seleccionados.");
-      } else {
+    if (targetAmount <= 0 && selectedAdjustmentsTotal <= 0 && loanPaymentsTotal <= 0) {
       setErrorMsg("Debes ingresar un monto mayor a 0 para liquidar.");
-      }
       return;
     }
     
@@ -985,7 +866,7 @@ export default function SalarySettlementPanel({
 
     // Usar nuevo sistema de selección de ajustes
     const entriesToApply = pendingAdjustments
-      .filter((adj) => adj.isAvailableThisWeek)
+      .filter((adj) => adj.type !== "loan" && adj.isAvailableThisWeek)
       .map((adj) => {
         const selection = selectedAdjustments[adj.id];
         if (selection && selection.selected && selection.amount > 0) {
@@ -1019,7 +900,7 @@ export default function SalarySettlementPanel({
 
     const carryOverAdjustments = pendingAdjustments
       .map((adj) => {
-        if (!adj.isCurrentWeek || !adj.isAvailableThisWeek) return null;
+        if (adj.type === "loan" || !adj.isCurrentWeek || !adj.isAvailableThisWeek) return null;
         const raw = draftsForSave[adj.id] ?? 0;
         const leftover = Math.max(adj.remaining - raw, 0);
         if (leftover <= 0) return null;
@@ -1050,49 +931,21 @@ export default function SalarySettlementPanel({
       carryOverSummary.push({ original_id: item.adj.id, amount: item.leftover });
     }
 
-    // Procesar abonos de préstamos antes de registrar la liquidación
-    const loanPaymentPromises = Object.entries(loanPayments).map(async ([loanId, payment]) => {
-      if (payment.amount <= 0) return;
-      
-      const loan = loans.find(l => l.id === loanId);
-      if (!loan) return;
-      
-      const newAmount = Math.max(0, loan.amount - payment.amount);
-      const paymentDate = payment.date || new Date().toISOString().slice(0, 10);
-      const paymentNote = `Abono de ${formatCLP(payment.amount)} el ${paymentDate}${payment.note ? ` - ${payment.note}` : ''}`;
-      const updatedNote = loan.note 
-        ? `${loan.note}\n${paymentNote}`
-        : paymentNote;
-      
-      const { error: loanError } = await supabase
-        .from("salary_adjustments")
-        .update({
-          amount: newAmount,
-          note: updatedNote
-        })
-        .eq("id", loanId);
-      
-      if (loanError) {
-        console.error(`Error actualizando préstamo ${loanId}:`, loanError);
-        throw new Error(`Error al registrar abono del préstamo: ${loanError.message}`);
-      }
-    });
-    
-    try {
-      await Promise.all(loanPaymentPromises);
-    } catch (error) {
-      console.error("Error procesando abonos de préstamos:", error);
-      setErrorMsg(error instanceof Error ? error.message : "Error al procesar abonos de préstamos");
-      setSaving(false);
-      return;
-    }
+    const loanPaymentsPayload = Object.entries(loanPayments)
+      .filter(([, payment]) => payment.amount > 0)
+      .map(([loanId, payment]) => ({
+        loan_id: loanId,
+        amount: payment.amount,
+        payment_date: payment.date || new Date().toISOString().slice(0, 10),
+        note: payment.note || null,
+      }));
 
     const detailsPayload = {
       base_amount: baseAmount,
       selected_adjustments_total: selectedAdjustmentsTotal,
       loan_payments_total: loanPaymentsTotal,
       settled_amount: targetAmount,
-      adjustments: pendingAdjustments.map((adj) => {
+      adjustments: pendingAdjustments.filter((adj) => adj.type !== "loan").map((adj) => {
         const applied = appliedById[adj.id] ?? 0;
         return {
           id: adj.id,
@@ -1105,6 +958,7 @@ export default function SalarySettlementPanel({
             carryOverSummary.find((item) => item.original_id === adj.id)?.amount ?? 0,
         };
       }),
+      loan_payments: loanPaymentsPayload,
       carry_over: carryOverSummary,
       // Si es pago mixto, guardar los montos por separado
       ...(paymentMethod === "efectivo/transferencia" && {
@@ -1153,13 +1007,14 @@ export default function SalarySettlementPanel({
         p_payment_method: paymentMethod,
         p_details: detailsPayload,
         p_applications: applicationsPayload.length > 0 ? applicationsPayload : null,
+        p_loan_payments: loanPaymentsPayload.length > 0 ? loanPaymentsPayload : null,
         p_created_by: userData?.user?.id ?? null,
       });
       
       if (error) {
-        console.warn("Error usando función transaccional, intentando método antiguo:", error);
+        console.warn("Error usando función transaccional:", error);
         console.error("Detalles del error RPC:", JSON.stringify(error, null, 2));
-        // Fallback al método antiguo si la función no existe
+        // No se usa fallback no transaccional: si falla la RPC, no se guarda nada parcial.
         settlementError = error;
       } else if (data) {
         console.log("✅ Función transaccional ejecutada correctamente. Settlement ID:", data);
@@ -1200,33 +1055,8 @@ export default function SalarySettlementPanel({
         }
       }
     } catch (rpcError: any) {
-      console.warn("Función transaccional no disponible, usando método antiguo:", rpcError);
-      // Fallback: usar método antiguo
-      const { data, error } = await supabase
-      .from("salary_settlements")
-      .insert(settlementData)
-        .select();
-      
-      insertedData = data;
-      settlementError = error;
-      
-      // Si el settlement se guardó, guardar aplicaciones por separado
-      if (data && data.length > 0 && applicationsSupported && entriesToApply.length > 0) {
-        const payload = entriesToApply.map((entry) => ({
-          ...entry,
-          week_start: weekStartISO,
-          created_by: userData?.user?.id ?? null,
-        }));
-        
-        const { error: appError } = await supabase
-          .from("salary_adjustment_applications")
-          .insert(payload);
-        
-        if (appError) {
-          console.error("Error guardando aplicaciones:", appError);
-          setErrorMsg("⚠️ La liquidación se guardó pero hubo un error al registrar las aplicaciones. Verifica manualmente.");
-        }
-      }
+      console.error("Función transaccional no disponible o falló:", rpcError);
+      settlementError = rpcError;
     }
 
     setSaving(false);
@@ -1936,11 +1766,33 @@ export default function SalarySettlementPanel({
                           )}
                         </div>
                         <div className="text-sm font-semibold text-purple-800 mb-1">
-                          Saldo pendiente: {formatCLP(loan.amount)}
+                          Saldo pendiente: {formatCLP(loan.remaining)}
                         </div>
+                        <div className="text-xs text-purple-700">
+                          Préstamo original: {formatCLP(loan.amount)}
+                          {loan.appliedTotal > 0 && ` • Abonado: ${formatCLP(loan.appliedTotal)}`}
+                        </div>
+                        {loan.remaining === 0 && (
+                          <div className="text-xs text-emerald-600 font-medium mt-1">
+                            ✅ Préstamo saldado completamente
+                          </div>
+                        )}
+                        {(loan.payments?.length ?? 0) > 0 && (
+                          <div className="mt-2 pt-2 border-t border-purple-200">
+                            <p className="text-xs font-semibold text-purple-700 mb-1">Historial de abonos:</p>
+                            <div className="text-xs text-purple-600 space-y-1">
+                              {loan.payments?.slice(0, 5).map((loanPayment) => (
+                                <div key={loanPayment.id} className="pl-2 border-l-2 border-purple-300">
+                                  {formatCLP(loanPayment.amount)} el {formatDate(loanPayment.payment_date)}
+                                  {loanPayment.note ? ` - ${loanPayment.note}` : ""}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {paymentAmount > 0 && (
                           <div className="text-xs text-emerald-600 font-medium mt-1">
-                            ✓ Abono registrado: {formatCLP(paymentAmount)} (se descontará del total)
+                            ✓ Abono preparado: {formatCLP(paymentAmount)}
                           </div>
                         )}
                       </div>
@@ -1948,7 +1800,7 @@ export default function SalarySettlementPanel({
                     
                     {canEditAdjustments && (
                       <div className="mt-3 pt-3 border-t border-purple-200">
-                        <p className="text-xs font-semibold text-purple-700 mb-2">Registrar Abono en esta Liquidación:</p>
+                        <p className="text-xs font-semibold text-purple-700 mb-2">Registrar abono de préstamo:</p>
                         <div className="grid grid-cols-3 gap-2">
                           <input
                             type="text"
@@ -1957,7 +1809,7 @@ export default function SalarySettlementPanel({
                             value={formatCLPInput(payment?.amount || 0)}
                             onChange={(e) => {
                               const parsed = parseCLPInput(e.target.value);
-                              const amount = Math.max(0, Math.min(parsed, loan.amount));
+                              const amount = Math.max(0, Math.min(parsed, loan.remaining));
                               setLoanPayments(prev => ({
                                 ...prev,
                                 [loan.id]: {
@@ -1969,7 +1821,7 @@ export default function SalarySettlementPanel({
                             }}
                             className="border border-purple-300 rounded px-2 py-1 text-xs"
                             min="0"
-                            max={loan.amount}
+                            max={loan.remaining}
                           />
                           <input
                             type="date"
@@ -2004,22 +1856,32 @@ export default function SalarySettlementPanel({
                           />
                         </div>
                         {paymentAmount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLoanPayments(prev => {
-                                const next = { ...prev };
-                                delete next[loan.id];
-                                return next;
-                              });
-                            }}
-                            className="mt-2 px-3 py-1 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50"
-                          >
-                            ✖️ Eliminar abono
-                          </button>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveLoanPayment(loan)}
+                              disabled={saving || !loanPaymentsSupported}
+                              className="px-3 py-1 text-xs font-semibold rounded-md border border-purple-500 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              💾 Guardar abono del préstamo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLoanPayments(prev => {
+                                  const next = { ...prev };
+                                  delete next[loan.id];
+                                  return next;
+                                });
+                              }}
+                              className="px-3 py-1 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50"
+                            >
+                              ✖️ Eliminar abono
+                            </button>
+                          </div>
                         )}
                         <p className="text-xs text-purple-600 mt-2">
-                          💡 Este abono se descontará del total pendiente y se registrará en el préstamo
+                          💡 Puedes guardar este abono inmediatamente o incluirlo en la liquidación general.
                         </p>
                       </div>
                     )}
@@ -2128,7 +1990,7 @@ export default function SalarySettlementPanel({
         <button
           type="button"
           onClick={() => void handleLiquidation()}
-          disabled={saving || !paymentMethod || (paymentMethod as string) === "" || (paymentMethod === "efectivo/transferencia" ? (cashAmount + transferAmount) <= 0 : customAmountInput <= 0)}
+          disabled={saving || !paymentMethod || (paymentMethod as string) === "" || (loanPaymentsTotal <= 0 && (paymentMethod === "efectivo/transferencia" ? (cashAmount + transferAmount) <= 0 : customAmountInput <= 0))}
           className="px-4 py-2 text-xs font-semibold rounded-md text-white bg-brand-light hover:bg-white hover:text-brand border border-brand-light hover:border-white transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Guardando..." : "Registrar liquidación"}
