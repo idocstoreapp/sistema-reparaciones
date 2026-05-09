@@ -678,19 +678,20 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
       const techAdjustments = adjustmentsByTech[techId] ?? [];
       if (techAdjustments.length === 0) return;
 
-      const confirmed = window.confirm("¿Seguro que quieres saldar todos los ajustes de esta semana?");
+      const confirmed = window.confirm(
+        "¿Eliminar manualmente todos los descuentos, adelantos y abonos pendientes de este técnico?"
+      );
       if (!confirmed) return;
 
       setActionErrorsByTech((prev) => ({ ...prev, [techId]: null }));
       setSettlingAdjustmentsByTech((prev) => ({ ...prev, [techId]: true }));
-      const { start, end } = currentWeekRange();
+      const adjustmentIds = techAdjustments.map((adj) => adj.id);
 
       const { error } = await supabase
         .from("salary_adjustments")
         .delete()
         .eq("technician_id", techId)
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+        .in("id", adjustmentIds);
 
       setSettlingAdjustmentsByTech((prev) => ({ ...prev, [techId]: false }));
 
@@ -698,7 +699,7 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
         console.error("Error al saldar ajustes:", error);
         setActionErrorsByTech((prev) => ({
           ...prev,
-          [techId]: "No pudimos saldar los ajustes. Intenta nuevamente.",
+          [techId]: "No pudimos eliminar manualmente los ajustes. Intenta nuevamente.",
         }));
         return;
       }
@@ -791,6 +792,12 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
     },
     [returnsByTech, loadWeeklyData]
   );
+
+  useEffect(() => {
+    if (techModalOpen) {
+      void loadAdjustmentsForTech(techModalOpen, true);
+    }
+  }, [techModalOpen, loadAdjustmentsForTech]);
 
   return (
     <div className="p-6 bg-white">
@@ -1165,6 +1172,23 @@ export default function TechnicianPayments({ refreshKey = 0, branchId, technicia
                       }
                     }}
                   />
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-amber-800">Acciones manuales de respaldo</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Si al pagar no se limpian automáticamente descuentos, adelantos o abonos, puedes eliminarlos manualmente desde aquí.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleSettleAdjustments(tech.id)}
+                    disabled={(settlingAdjustmentsByTech[tech.id] ?? false) || (adjustmentsByTech[tech.id]?.length ?? 0) === 0}
+                    className="mt-3 text-xs px-3 py-2 rounded border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {settlingAdjustmentsByTech[tech.id]
+                      ? "Eliminando ajustes..."
+                      : `Eliminar manualmente ajustes pendientes (${adjustmentsByTech[tech.id]?.length ?? 0})`}
+                  </button>
                 </div>
 
                 {/* Historial de Pagos con Filtros */}
